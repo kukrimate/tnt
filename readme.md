@@ -4,7 +4,7 @@ TNT is a minimalist, multi-threaded web fuzzer written in C.
 ## DISCLAIMER
 This tool is designed for security testing. If you use this tool, it is **your**
 responsibility to make sure you have permission to use it on the target system.
-In no event shall the author be held liable for the (mis)use of this tool.
+IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR THE (MIS)USE OF THIS TOOL.
 
 ## Usage
 Clone the repository, build with `make`. Either install the TNT binary
