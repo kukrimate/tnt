@@ -15,9 +15,10 @@ struct dynarr {
 };
 
 /*
- * Create a new dynamic array in x with an element size of elem_size
+ * Create a new dynamic array in x with an element size of elem_size,
+ * that has at least enough space to fit must_fit elements
  */
-void dynarr_new(dynarr *x, size_t elem_size);
+void dynarr_new(dynarr *x, size_t elem_size, size_t must_fit);
 
 /*
  * Delete a dynamic array x
@@ -40,6 +41,11 @@ void dynarr_addc(dynarr *x, char c);
  */
 void dynarr_addp(dynarr *x, void *p);
 
+
+/*
+ * Pointer to the ith element
+ */
+void *dynarr_ptr(dynarr *x, size_t i);
 
 /*
  * Get cnt elements starting from the i-th from dynamic array x

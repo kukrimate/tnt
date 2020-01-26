@@ -1,9 +1,10 @@
 # Default install prefix
-PREFIX := /usr/local
+PREFIX  := /usr/local
 
 # Compiler flags
-CFLAGS := -std=c99 -D_GNU_SOURCE -pedantic -Wall -Wdeclaration-after-statement \
-	-Wno-parentheses -finline-functions -g
+CFLAGS  := -std=c99 -D_GNU_SOURCE -pedantic -Wall -Wdeclaration-after-statement \
+	-Wno-parentheses -finline-functions -pthread -g
+LDFLAGS :=  -pthread
 
 # Object files
 OBJ := url.o dynarr.o http.o tnt.o

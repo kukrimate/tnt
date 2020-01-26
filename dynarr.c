@@ -8,20 +8,6 @@
 #include <string.h>
 #include "dynarr.h"
 
-void dynarr_new(dynarr *x, size_t elem_size)
-{
-	x->elem_size = elem_size;
-	x->elem_count = x->buffer_size = 0;
-	x->buffer = NULL;
-}
-
-void dynarr_del(dynarr *x)
-{
-	if (x->buffer)
-		free(x->buffer);
-}
-
-
 /*
  * Make sure dynamic array x can fit cnt more elements
  */
@@ -35,6 +21,23 @@ static void dynarr_grow(dynarr *x, size_t cnt)
 		x->buffer = realloc(x->buffer, x->buffer_size);
 	}
 }
+
+
+void dynarr_new(dynarr *x, size_t elem_size, size_t must_fit)
+{
+	x->elem_size = elem_size;
+	x->elem_count = x->buffer_size = 0;
+	x->buffer = NULL;
+
+	dynarr_grow(x, must_fit);
+}
+
+void dynarr_del(dynarr *x)
+{
+	if (x->buffer)
+		free(x->buffer);
+}
+
 
 void dynarr_add(dynarr *x, size_t cnt, void *d)
 {
@@ -56,6 +59,11 @@ void dynarr_addp(dynarr *x, void *p)
 	((void **) x->buffer)[x->elem_count++] = p;
 }
 
+
+void *dynarr_ptr(dynarr *x, size_t i)
+{
+	return (char *) x->buffer + i * x->elem_size;
+}
 
 void dynarr_get(dynarr *x, size_t i, size_t cnt, void *d)
 {
