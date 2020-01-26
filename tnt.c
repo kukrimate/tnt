@@ -116,7 +116,8 @@ static char *template_gen(char *template, char *old, char *new)
 	return res.buffer;
 }
 
-static int runfuzz(struct sockaddr_in *addr, char *template, dynarr *wlist)
+static int runfuzz(struct sockaddr_in *addr,  char *host, char *template,
+	dynarr *wlist)
 {
 	dynarr req, resp;
 	char *path;
@@ -143,7 +144,7 @@ static int runfuzz(struct sockaddr_in *addr, char *template, dynarr *wlist)
 		dynarr_addp(&req, path);
 		dynarr_addp(&req, "HTTP/1.1");
 		dynarr_addp(&req, "Host");
-		dynarr_addp(&req, "localhost");
+		dynarr_addp(&req, host);
 		dynarr_addp(&req, "Connection");
 		dynarr_addp(&req, "close");
 
@@ -178,6 +179,8 @@ typedef struct {
 	pthread_t tid;
 	/* Address of the target server */
 	struct sockaddr_in *addr;
+	/* Host string */
+	char *host;
 	/* Template string */
 	char *template;
 	/* List of keywords */
@@ -186,12 +189,12 @@ typedef struct {
 
 static void *fuzzthread_start(fuzzthread *args)
 {
-	if (-1 == runfuzz(args->addr, args->template, &args->wlist))
+	if (-1 == runfuzz(args->addr, args->host, args->template, &args->wlist))
 		return NULL;
 	return args;
 }
 
-static int spawn_threads(int tcount, struct sockaddr_in *addr,
+static int spawn_threads(int tcount, struct sockaddr_in *addr, char *host,
 	char *template, dynarr *wlist)
 {
 	fuzzthread thread, *threadptr;
@@ -210,6 +213,7 @@ static int spawn_threads(int tcount, struct sockaddr_in *addr,
 	for (i = 0; i < tcount; ++i) {
 		memset(&thread, 0, sizeof(thread));
 		thread.addr = addr;
+		thread.host = host;
 		thread.template = template;
 
 		/* Create thread specific wordlist */
@@ -300,7 +304,7 @@ usage:
 		goto err_free_url;
 
 	/* Spawn and wait for fuzzing threads */
-	if (-1 == spawn_threads(opt_threads, &addr, url.path, &wlist))
+	if (-1 == spawn_threads(opt_threads, &addr, url.domain, url.path, &wlist))
 		goto err_free_url;
 
 	/* Success cleanup path */

@@ -1,5 +1,5 @@
 # TNT
-TNT is a minimalist web fuzzer written in C.
+TNT is a minimalist, multi-threaded web fuzzer written in C.
 
 ## DISCLAIMER
 This tool is designed for security testing. If you use this tool, it is **your**
