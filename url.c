@@ -81,12 +81,8 @@ int url_parse(char *str, url *url)
 
 	/* Store domain */
 	url->domain = strndup(p, p3 - p);
-
 	/* Store path */
-	if (*p2)
-		url->path = strdup(p2);
-	else
-		url->path = NULL;
+	url->path = strdup(p2);
 
 	return 0;
 }
