@@ -15,10 +15,9 @@ struct dynarr {
 };
 
 /*
- * Create a new dynamic array in x with an element size of elem_size,
- * that has at least enough space to fit must_fit elements
+ * Create a new dynamic array in x with an element size of elem_size
  */
-void dynarr_new(dynarr *x, size_t elem_size, size_t must_fit);
+void dynarr_new(dynarr *x, size_t elem_size);
 
 /*
  * Delete a dynamic array x

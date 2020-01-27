@@ -66,7 +66,7 @@ static int readlist(char *path, dynarr *out)
 		return -1;
 	}
 
-	dynarr_new(&tmp, sizeof(char), 0);
+	dynarr_new(&tmp, sizeof(char));
 
 	while (0 < (len = read(fd, buf, sizeof(buf))))
 		for (bptr = buf; bptr < buf + len; ++bptr) {
@@ -108,7 +108,7 @@ static char *template_gen(char *template, char *old, char *new)
 		return NULL;
 	end = begin + strlen(old);
 
-	dynarr_new(&res, sizeof(char), 0);
+	dynarr_new(&res, sizeof(char));
 	dynarr_add(&res, begin - template, template);
 	dynarr_add(&res, strlen(new), new);
 	dynarr_add(&res, strlen(template) - (end - template), end);
@@ -124,8 +124,8 @@ static int runfuzz(struct sockaddr_in *addr,  char *host, char *template,
 	int sock;
 	size_t i_word, i;
 
-	dynarr_new(&req, sizeof(char *), 0);
-	dynarr_new(&resp, sizeof(char *), 0);
+	dynarr_new(&req, sizeof(char *));
+	dynarr_new(&resp, sizeof(char *));
 
 	for (i_word = 0; i_word < wlist->elem_count; ++i_word) {
 		path = template_gen(template, "FUZZ", dynarr_getp(wlist, i_word));
@@ -197,51 +197,42 @@ static void *fuzzthread_start(fuzzthread *args)
 static int spawn_threads(int tcount, struct sockaddr_in *addr, char *host,
 	char *template, dynarr *wlist)
 {
-	fuzzthread thread, *threadptr;
-	dynarr thread_list;
-	size_t twlist_len, i;
 	int status;
+	fuzzthread *tptr;
+	size_t wleft, cnt;
 	void *retval;
 
 	status = 0;
+	tptr = malloc(tcount * sizeof(fuzzthread));
+	wleft = wlist->elem_count;
 
-	/* must_fit set to prevent race-conditions */
-	dynarr_new(&thread_list, sizeof(fuzzthread), tcount);
-	twlist_len = wlist->elem_count / tcount;
+	for (cnt = tcount; cnt--; ++tptr) {
 
-	/* Create threads */
-	for (i = 0; i < tcount; ++i) {
-		memset(&thread, 0, sizeof(thread));
-		thread.addr = addr;
-		thread.host = host;
-		thread.template = template;
+		tptr->addr = addr;
+		tptr->host = host;
+		tptr->template = template;
 
-		/* Create thread specific wordlist */
-		dynarr_new(&thread.wlist, sizeof(char *), 0);
-		if (i == tcount - 1)
-			dynarr_add(&thread.wlist, wlist->elem_count - i * twlist_len,
-				dynarr_ptr(wlist, i * twlist_len));
-		else
-			dynarr_add(&thread.wlist, twlist_len,
-				dynarr_ptr(wlist, i * twlist_len));
+		dynarr_new(&tptr->wlist, sizeof(char *));
+		if (cnt) {
+			wleft -= wlist->elem_count / tcount;
+			dynarr_add(&tptr->wlist, wlist->elem_count / tcount,
+				dynarr_ptr(wlist, wleft));
+		} else {
+			dynarr_add(&tptr->wlist, wleft,	wlist->buffer);
+		}
 
-		dynarr_add(&thread_list, 1, &thread);
-		threadptr = dynarr_ptr(&thread_list, i);
-
-		pthread_create(&threadptr->tid, NULL,
-				(void *(*) (void *)) fuzzthread_start, threadptr);
+		pthread_create(&tptr->tid, NULL,
+			(void *(*) (void *)) fuzzthread_start, tptr);
 	}
 
-	/* Wait for all threads */
-	for (i = 0; i < thread_list.elem_count; ++i) {
-		threadptr = dynarr_ptr(&thread_list, i);
-		pthread_join(threadptr->tid, &retval);
+	for (cnt = tcount; cnt--;) {
+		pthread_join((--tptr)->tid, &retval);
 		if (!retval)
 			status = -1;
-		dynarr_del(&threadptr->wlist);
+		dynarr_del(&tptr->wlist);
 	}
 
-	dynarr_del(&thread_list);
+	free(tptr);
 	return status;
 }
 
@@ -291,7 +282,7 @@ usage:
 		goto usage;
 	}
 
-	dynarr_new(&wlist, sizeof(char *), 0);
+	dynarr_new(&wlist, sizeof(char *));
 	if (-1 == readlist(opt_wordlist, &wlist)) {
 		dynarr_del(&wlist);
 		goto err;

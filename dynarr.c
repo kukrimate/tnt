@@ -23,13 +23,11 @@ static void dynarr_grow(dynarr *x, size_t cnt)
 }
 
 
-void dynarr_new(dynarr *x, size_t elem_size, size_t must_fit)
+void dynarr_new(dynarr *x, size_t elem_size)
 {
 	x->elem_size = elem_size;
 	x->elem_count = x->buffer_size = 0;
 	x->buffer = NULL;
-
-	dynarr_grow(x, must_fit);
 }
 
 void dynarr_del(dynarr *x)

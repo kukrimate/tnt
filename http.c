@@ -22,7 +22,7 @@ static int http_recieve(int sock, dynarr *resp)
 										  3-4: Name and value of a header */
 	size_t i;
 
-	dynarr_new(&tmp, sizeof(char), 0);
+	dynarr_new(&tmp, sizeof(char));
 	state = 0;
 
 	lchr = 0;
