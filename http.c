@@ -75,7 +75,8 @@ static int http_recieve(int sock, dynarr *resp)
 			case ':':
 				switch (state) {
 				case 3:
-					dynarr_addp(resp, strndup(tmp.buffer, tmp.elem_count - 1));					tmp.elem_count = 0;
+					dynarr_addp(resp, strndup(tmp.buffer, tmp.elem_count - 1));
+					tmp.elem_count = 0;
 					++state;
 					break;
 				}

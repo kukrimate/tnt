@@ -1,7 +1,7 @@
 /*
- *	Dynamic array implementation
- *	Author: Mate Kukri
- *	License: ISC
+ * Dynamic array implementation
+ * Author: Mate Kukri
+ * License: ISC
  */
 #include <assert.h>
 #include <stdlib.h>
