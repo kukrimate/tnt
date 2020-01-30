@@ -36,6 +36,15 @@ void dynarr_del(dynarr *x)
 		free(x->buffer);
 }
 
+void dynarr_delall(dynarr *x)
+{
+	size_t i;
+
+	for (i = 0; i < x->elem_count; ++i)
+		free(dynarr_getp(x, i));
+	dynarr_del(x);
+}
+
 
 void dynarr_add(dynarr *x, size_t cnt, void *d)
 {

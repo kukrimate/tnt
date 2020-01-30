@@ -52,96 +52,26 @@ static int tcpopen(struct sockaddr_in *addr)
 	return sock;
 }
 
-static int readlist(char *path, dynarr *out)
-{
-	int fd;
-	char buf[4096], *bptr;
-	ssize_t len;
-	size_t i;
-	dynarr tmp;
-
-	fd = open(path, O_RDONLY);
-	if (-1 == fd) {
-		perror("open");
-		return -1;
-	}
-
-	dynarr_new(&tmp, sizeof(char));
-
-	while (0 < (len = read(fd, buf, sizeof(buf))))
-		for (bptr = buf; bptr < buf + len; ++bptr) {
-			dynarr_addc(&tmp, *bptr);
-			if (*bptr == '\n') {
-				if (tmp.elem_count > 1)
-					dynarr_addp(out, strndup(tmp.buffer, tmp.elem_count - 1));
-				tmp.elem_count = 0;
-			}
-		}
-	/* add last, (unterminated) line if it's not empty */
-	if (tmp.elem_count > 1)
-		dynarr_addp(out, strndup(tmp.buffer, tmp.elem_count - 1));
-
-	if (-1 == len) {
-		perror("read");
-		goto err;
-	}
-
-	dynarr_del(&tmp);
-	close(fd);
-	return 0;
-err:
-	for (i = 0; i < out->elem_count; ++i)
-		free(dynarr_getp(out, i));
-	dynarr_del(&tmp);
-	close(fd);
-	return 0;
-}
-
-/* Generate new string from template */
-static char *template_gen(char *template, char *old, char *new)
-{
-	char *begin, *end;
-	dynarr res;
-
-	begin = strstr(template, old);
-	if (!begin)
-		return NULL;
-	end = begin + strlen(old);
-
-	dynarr_new(&res, sizeof(char));
-	dynarr_add(&res, begin - template, template);
-	dynarr_add(&res, strlen(new), new);
-	dynarr_add(&res, strlen(template) - (end - template), end);
-	dynarr_addc(&res, 0);
-	return res.buffer;
-}
-
-static int runfuzz(struct sockaddr_in *addr,  char *host, char *template,
-	dynarr *wlist)
+static int runfuzz(struct sockaddr_in *addr, char *host, dynarr *plist)
 {
 	dynarr req, resp;
-	char *path;
 	int sock;
-	size_t i_word, i;
+	char **cur, *end;
+	size_t i;
 
 	dynarr_new(&req, sizeof(char *));
 	dynarr_new(&resp, sizeof(char *));
+	cur = dynarr_ptr(plist, 0);
+	
+	end = (char *) plist->buffer + plist->elem_size * plist->elem_count;
 
-	for (i_word = 0; i_word < wlist->elem_count; ++i_word) {
-		path = template_gen(template, "FUZZ", dynarr_getp(wlist, i_word));
-		if (!path) {
-			fprintf(stderr, "'FUZZ' missing from your URL\n");
-			goto err;
-		}
-
+	while ((char *) cur < end) {
 		sock = tcpopen(addr);
-		if (-1 == sock) {
-			free(path);
+		if (-1 == sock)
 			goto err;
-		}
 
 		dynarr_addp(&req, "GET");
-		dynarr_addp(&req, path);
+		dynarr_addp(&req, *cur);
 		dynarr_addp(&req, "HTTP/1.1");
 		dynarr_addp(&req, "Host");
 		dynarr_addp(&req, host);
@@ -153,13 +83,12 @@ static int runfuzz(struct sockaddr_in *addr,  char *host, char *template,
 			goto err;
 		}
 		close(sock);
-		printf("Path: %s Status: %s\n", path, (char *) dynarr_getp(&resp, 1));
+		printf("Path: %s Status: %s\n", *cur++, (char *) dynarr_getp(&resp, 1));
 
-		/* Free request */
-		free(path);
+		/* Discard request */
 		req.elem_count = 0;
 
-		/* Free response */
+		/* Discard response */
 		for (i = 0; i < resp.elem_count; ++i)
 			free(dynarr_getp(&resp, i));
 		resp.elem_count = 0;
@@ -181,44 +110,40 @@ typedef struct {
 	struct sockaddr_in *addr;
 	/* Host string */
 	char *host;
-	/* Template string */
-	char *template;
-	/* List of keywords */
-	dynarr wlist;
+	/* List of paths */
+	dynarr plist;
 } fuzzthread;
 
 static void *fuzzthread_start(fuzzthread *args)
 {
-	if (-1 == runfuzz(args->addr, args->host, args->template, &args->wlist))
+	if (-1 == runfuzz(args->addr, args->host, &args->plist))
 		return NULL;
 	return args;
 }
 
 static int spawn_threads(int tcount, struct sockaddr_in *addr, char *host,
-	char *template, dynarr *wlist)
+	dynarr *plist)
 {
 	int status;
 	fuzzthread *tptr;
-	size_t wleft, cnt;
+	size_t pleft, cnt;
 	void *retval;
 
 	status = 0;
 	tptr = malloc(tcount * sizeof(fuzzthread));
-	wleft = wlist->elem_count;
+	pleft = plist->elem_count;
 
 	for (cnt = tcount; cnt--; ++tptr) {
-
 		tptr->addr = addr;
 		tptr->host = host;
-		tptr->template = template;
 
-		dynarr_new(&tptr->wlist, sizeof(char *));
+		dynarr_new(&tptr->plist, sizeof(char *));
 		if (cnt) {
-			wleft -= wlist->elem_count / tcount;
-			dynarr_add(&tptr->wlist, wlist->elem_count / tcount,
-				dynarr_ptr(wlist, wleft));
+			pleft -= plist->elem_count / tcount;
+			dynarr_add(&tptr->plist, plist->elem_count / tcount,
+				dynarr_ptr(plist, pleft));
 		} else {
-			dynarr_add(&tptr->wlist, wleft,	wlist->buffer);
+			dynarr_add(&tptr->plist, pleft,	plist->buffer);
 		}
 
 		pthread_create(&tptr->tid, NULL,
@@ -229,24 +154,127 @@ static int spawn_threads(int tcount, struct sockaddr_in *addr, char *host,
 		pthread_join((--tptr)->tid, &retval);
 		if (!retval)
 			status = -1;
-		dynarr_del(&tptr->wlist);
+		dynarr_del(&tptr->plist);
 	}
 
 	free(tptr);
 	return status;
 }
 
-int main(int argc, char *argv[])
+static char *template_gen(char *template, char *old, char *new)
 {
-	/* Options */
-	int opt, opt_threads;
-	char *opt_wordlist, *opt_url;
+	char *begin, *end;
+	dynarr res;
 
-	dynarr wlist;
+	begin = strstr(template, old);
+	if (!begin)
+		return NULL;
+	end = begin + strlen(old);
+
+	dynarr_new(&res, sizeof(char));
+	dynarr_add(&res, begin - template, template);
+	dynarr_add(&res, strlen(new), new);
+	dynarr_add(&res, strlen(template) - (end - template), end);
+	dynarr_addc(&res, 0);
+	return res.buffer;
+}
+
+static int genlist(char *file, char *template, dynarr *list)
+{
+	int fd;
+	char buf[4096], *bptr, *t;
+	ssize_t len;
+	size_t i;
+	dynarr tmp;
+
+	fd = open(file, O_RDONLY);
+	if (-1 == fd) {
+		perror("open");
+		return -1;
+	}
+
+	dynarr_new(&tmp, sizeof(char));
+
+	while (0 < (len = read(fd, buf, sizeof(buf))))
+		for (bptr = buf; bptr < buf + len; ++bptr) {
+			dynarr_addc(&tmp, *bptr);
+			if (*bptr == '\n') {
+				if (tmp.elem_count > 1) {
+					t = strndup(tmp.buffer, tmp.elem_count - 1);
+					dynarr_addp(list, template_gen(template, "FUZZ", t));
+					free(t);
+				}
+				tmp.elem_count = 0;
+			}
+		}
+	/* add last, (unterminated) line if it's not empty */
+	if (tmp.elem_count > 1) {
+		t = strndup(tmp.buffer, tmp.elem_count - 1);
+		dynarr_addp(list, template_gen(template, "FUZZ", t));
+		free(t);
+	}
+
+	if (-1 == len) {
+		perror("read");
+		goto err;
+	}
+
+	dynarr_del(&tmp);
+	close(fd);
+	return 0;
+
+err:
+	for (i = 0; i < list->elem_count; ++i)
+		free(dynarr_getp(list, i));
+	dynarr_del(&tmp);
+	close(fd);
+	return -1;
+}
+
+
+/*
+ * Actual program functionality called from 'main' after option parsing
+ */
+static int prog(int opt_threads, char *opt_wordlist, char *opt_url)
+{
 	url url;
+	dynarr wlist;
 	struct sockaddr_in addr;
 
-	size_t i; /* Loop counter */
+	if (-1 == url_parse(opt_url, &url)) {
+		fprintf(stderr, "Invalid URL\n");
+		return 1;
+	}
+	if (!strstr(url.path, "FUZZ")) {
+		fprintf(stderr, "URL must include 'FUZZ'");
+		goto err_url;	
+	}
+
+	dynarr_new(&wlist, sizeof(char *));
+	if (-1 == genlist(opt_wordlist, url.path, &wlist)) {
+		dynarr_del(&wlist);
+		goto err_url;
+	}
+
+	if (-1 == urltoaddr(&url, &addr) ||
+		-1 == spawn_threads(opt_threads, &addr, url.domain, &wlist))
+		goto err_wlist;
+	
+	dynarr_delall(&wlist);
+	url_free(&url);
+	return 0;
+
+err_wlist:
+	dynarr_delall(&wlist);
+err_url:
+	url_free(&url);
+	return 1;
+}
+
+int main(int argc, char *argv[])
+{
+	int opt, opt_threads;
+	char *opt_wordlist, *opt_url;
 
 	opt_threads = get_nprocs();
 	opt_wordlist = NULL;
@@ -256,10 +284,6 @@ int main(int argc, char *argv[])
 		switch (opt) {
 		case 't':
 			opt_threads = strtol(optarg, NULL, 10);
-			if (1 > opt_threads) {
-				fprintf(stderr, "Invalid argument for option -- 't'\n");
-				goto usage;
-			}
 			break;
 		case 'w':
 			opt_wordlist = optarg;
@@ -269,10 +293,13 @@ int main(int argc, char *argv[])
 			break;
 		case 'h':
 		default:
-usage:
-			printf("Usage: %s [-t THREADS] -w WORDLIST -u URL\n", argv[0]);
-			goto err;
+			goto usage;
 		}
+
+	if (1 > opt_threads) {
+		fprintf(stderr, "Invalid argument for option -- 't'\n");
+		goto usage;
+	}
 	if (!opt_wordlist) {
 		fprintf(stderr, "Required argument missing -- 'w'\n");
 		goto usage;
@@ -282,36 +309,8 @@ usage:
 		goto usage;
 	}
 
-	dynarr_new(&wlist, sizeof(char *));
-	if (-1 == readlist(opt_wordlist, &wlist)) {
-		dynarr_del(&wlist);
-		goto err;
-	}
-	if (-1 == url_parse(opt_url, &url)) {\
-		fprintf(stderr, "Invalid URL\n");
-		goto err_del_wlist;
-	}
-	if (-1 == urltoaddr(&url, &addr))
-		goto err_free_url;
-
-	/* Spawn and wait for fuzzing threads */
-	if (-1 == spawn_threads(opt_threads, &addr, url.domain, url.path, &wlist))
-		goto err_free_url;
-
-	/* Success cleanup path */
-	url_free(&url);
-	for (i = 0; i < wlist.elem_count; ++i)
-		free(dynarr_getp(&wlist, i));
-	dynarr_del(&wlist);
-	return 0;
-
-	/* Failure cleanup path */
-err_free_url:
-	url_free(&url);
-err_del_wlist:
-	for (i = 0; i < wlist.elem_count; ++i)
-		free(dynarr_getp(&wlist, i));
-	dynarr_del(&wlist);
-err:
+	return prog(opt_threads, opt_wordlist, opt_url);
+usage:
+	printf("Usage: %s [-t THREADS] -w WORDLIST -u URL\n", argv[0]);
 	return 1;
 }

@@ -24,6 +24,11 @@ void dynarr_new(dynarr *x, size_t elem_size);
  */
 void dynarr_del(dynarr *x);
 
+/*
+ * Delete a dynamix array x and free all elements
+ */
+void dynarr_delall(dynarr *x);
+
 
 /*
  * Append cnt new elements to dynarmic array x
