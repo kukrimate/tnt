@@ -27,69 +27,54 @@ static int isnum(char *str, size_t len)
 
 int url_parse(char *str, url *url)
 {
-	char *p, *p2, *p3;
+	char *proto_end, *path_start, *port_start;
 	long int port;
 
-	/* First look for the protocol field */
-	p = strstr(str, "://");
-	/* Found protocol field */
-	if (p) {
-		if (!strncmp(str, "http", p - str)) {
+	proto_end = strstr(str, "://");
+	if (proto_end) {
+		if (!strncmp(str, "http", proto_end - str)) {
 			url->proto = PROTO_HTTP;
 			url->port = 80;
-		} else if (!strncmp(str, "https", p - str)) {
+		} else if (!strncmp(str, "https", proto_end - str)) {
 			url->proto = PROTO_HTTPS;
 			url->port = 443;
 		} else {
 			return -1;
 		}
-		/* Skip the protocol terminator */
-		p += 3;
-	/* No protocol field, use default */
+		proto_end += 3; /* Skip :// */
 	} else {
 		url->proto = PROTO_HTTP;
 		url->port = 80;
-		p = str;
+		proto_end = str;
 	}
 
-	/* Find the end of the domain */
-	p2 = strchr(p, '/');
-	if (!p2)
-		p2 = p + strlen(p);
+	path_start = strchr(proto_end, '/');
+	if (!path_start)
+		path_start = proto_end + strlen(proto_end);
 
-	/* Look for port */
-	p3 = strchr(p, ':');
-	if (p3) {
-		/* Port string has to be at least length 1 */
-		if (p3+1 >= p2)
+	port_start = strchr(proto_end, ':');
+	if (port_start) {
+		if (port_start + 1 >= path_start)
 			return -1;
-		/* Port string has to be a number */
-		if (!isnum(p3+1, p2-p3-1))
+		if (!isnum(port_start + 1, path_start - (port_start + 1)))
 			return -1;
-		/* Do conversion */
-		port = strtol(p3+1, NULL, 10);
-		/* Make sure conversion didn't overflow */
-		if (errno)
+		port = strtol(port_start + 1, NULL, 10);
+		if (errno) /* Make sure conversion didn't overflow */
 			return -1;
-		/* Make sure the port is not out of range */
-		if (port > 65535)
+		if (port > 65535) /* Make sure the port is not out of range */
 			return -1;
 		url->port = (uint16_t) port;
 	} else {
-		p3 = p2;
+		port_start = path_start;
 	}
 
-	/* Store domain */
-	url->domain = strndup(p, p3 - p);
-	/* Store path */
-	url->path = strdup(p2);
-
+	url->domain = strndup(proto_end, port_start - proto_end);
+	url->path = strdup(path_start);
 	return 0;
 }
 
 void url_free(url *url)
 {
 	free(url->domain);
-	if (url->path)
-		free(url->path);
+	free(url->path);
 }

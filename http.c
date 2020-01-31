@@ -127,24 +127,20 @@ int http_send(int sock, dynarr *req)
 {
 	size_t i;
 
-	/* Send request line */
 	if (0 > dprintf(sock, "%s %s %s\r\n",
 				(char *) dynarr_getp(req, 0),
 				(char *) dynarr_getp(req, 1),
 				(char *) dynarr_getp(req, 2)))
 		goto err_write;
-	/* Send headers */
 	for (i = 3; i < req->elem_count; i += 2) {
 		if (0 > dprintf(sock, "%s: %s\r\n",
 					(char *) dynarr_getp(req, i),
 					(char *) dynarr_getp(req, i + 1)))
 			goto err_write;
 	}
-	/* Terminate request */
 	if (0 > dprintf(sock, "\r\n"))
 		goto err_write;
 
-	/* Read the response */
 	return 0;
 err_write:
 	perror("write");
