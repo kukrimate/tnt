@@ -55,20 +55,29 @@ static int tcpopen(struct sockaddr_in *addr)
 static int runfuzz(struct sockaddr_in *addr, char *host, dynarr *plist)
 {
 	dynarr req, resp;
-	int sock;
+	int reconnect, sock;
 	char **cur, *end;
 	size_t i;
 
 	dynarr_new(&req, sizeof(char *));
 	dynarr_new(&resp, sizeof(char *));
+
+	reconnect = 0;
+	sock = tcpopen(addr);
+	if (-1 == sock)
+		goto err;
+
 	cur = dynarr_ptr(plist, 0);
-	
 	end = (char *) plist->buffer + plist->elem_size * plist->elem_count;
 
 	while ((char *) cur < end) {
-		sock = tcpopen(addr);
-		if (-1 == sock)
-			goto err;
+		if (reconnect) {
+			close(sock);
+			sock = tcpopen(addr);
+			if (-1 == sock)
+				goto err;
+			reconnect = 0;
+		}
 
 		dynarr_addp(&req, "GET");
 		dynarr_addp(&req, *cur);
@@ -76,14 +85,20 @@ static int runfuzz(struct sockaddr_in *addr, char *host, dynarr *plist)
 		dynarr_addp(&req, "Host");
 		dynarr_addp(&req, host);
 		dynarr_addp(&req, "Connection");
-		dynarr_addp(&req, "close");
+		dynarr_addp(&req, "keep-alive");
 
-		if (-1 == http_exchange(sock, &req, &resp)) {
+		if (-1 == http_send(sock, &req) ||
+				-1 == http_recieve(sock, &resp)) {
 			close(sock);
 			goto err;
 		}
-		close(sock);
 		printf("Path: %s Status: %s\n", *cur++, (char *) dynarr_getp(&resp, 1));
+
+		for (i = 3; i < resp.elem_count; i+=2) {
+			if (!strcasecmp(dynarr_getp(&resp, i), "Connection") &&
+					!strcasecmp(dynarr_getp(&resp, i + 1), "close"))
+				reconnect = 1;
+		}
 
 		/* Discard request */
 		req.elem_count = 0;
@@ -246,8 +261,8 @@ static int prog(int opt_threads, char *opt_wordlist, char *opt_url)
 		return 1;
 	}
 	if (!strstr(url.path, "FUZZ")) {
-		fprintf(stderr, "URL must include 'FUZZ'");
-		goto err_url;	
+		fprintf(stderr, "URL must include 'FUZZ'\n");
+		goto err_url;
 	}
 
 	dynarr_new(&wlist, sizeof(char *));
@@ -259,7 +274,7 @@ static int prog(int opt_threads, char *opt_wordlist, char *opt_url)
 	if (-1 == urltoaddr(&url, &addr) ||
 		-1 == spawn_threads(opt_threads, &addr, url.domain, &wlist))
 		goto err_wlist;
-	
+
 	dynarr_delall(&wlist);
 	url_free(&url);
 	return 0;

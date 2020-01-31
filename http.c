@@ -7,11 +7,29 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <unistd.h>
 #include "dynarr.h"
 #include "http.h"
 
-static int http_recieve(int sock, dynarr *resp)
+/*
+ * Create a "stripped" duplicate of a string
+ */
+static char *strstrip(char *s, size_t n)
+{
+	char *start, *end;
+
+	for (start = s; start < s + n; ++start)
+		if (!isspace(*start))
+			break;
+	for (end = s + n - 1; end >= start; --end)
+		if (!isspace(*end))
+			break;
+
+	return strndup(start, end - start + 1);
+}
+
+int http_recieve(int sock, dynarr *resp)
 {
 	char buf[4096];
 	ssize_t len;
@@ -37,7 +55,8 @@ static int http_recieve(int sock, dynarr *resp)
 				switch (state) {
 				case 0:
 				case 1:
-					dynarr_addp(resp, strndup(tmp.buffer, tmp.elem_count - 1));
+					dynarr_addp(resp,
+						strstrip(tmp.buffer, tmp.elem_count - 1));
 					tmp.elem_count = 0;
 					++state;
 					break;
@@ -51,12 +70,14 @@ static int http_recieve(int sock, dynarr *resp)
 					continue;
 				switch (state) {
 				case 2:
-					dynarr_addp(resp, strndup(tmp.buffer, tmp.elem_count - 2));
+					dynarr_addp(resp,
+						strstrip(tmp.buffer, tmp.elem_count - 2));
 					tmp.elem_count = 0;
 					++state;
 					break;
 				case 4:
-					dynarr_addp(resp, strndup(tmp.buffer, tmp.elem_count - 2));
+					dynarr_addp(resp,
+						strstrip(tmp.buffer, tmp.elem_count - 2));
 					tmp.elem_count = 0;
 					--state;
 					break;
@@ -75,7 +96,8 @@ static int http_recieve(int sock, dynarr *resp)
 			case ':':
 				switch (state) {
 				case 3:
-					dynarr_addp(resp, strndup(tmp.buffer, tmp.elem_count - 1));
+					dynarr_addp(resp,
+						strstrip(tmp.buffer, tmp.elem_count - 1));
 					tmp.elem_count = 0;
 					++state;
 					break;
@@ -101,16 +123,9 @@ success:
 	return 0;
 }
 
-/* HTTP protocol handler using an FSM */
-int http_exchange(int sock, dynarr *req, dynarr *resp)
+int http_send(int sock, dynarr *req)
 {
 	size_t i;
-
-	/* Validate and send the request */
-	if (req->elem_count < 3 || (req->elem_count - 3) % 2 != 0) {
-		errno = EINVAL;
-		return -1;
-	}
 
 	/* Send request line */
 	if (0 > dprintf(sock, "%s %s %s\r\n",
@@ -118,7 +133,6 @@ int http_exchange(int sock, dynarr *req, dynarr *resp)
 				(char *) dynarr_getp(req, 1),
 				(char *) dynarr_getp(req, 2)))
 		goto err_write;
-
 	/* Send headers */
 	for (i = 3; i < req->elem_count; i += 2) {
 		if (0 > dprintf(sock, "%s: %s\r\n",
@@ -131,7 +145,7 @@ int http_exchange(int sock, dynarr *req, dynarr *resp)
 		goto err_write;
 
 	/* Read the response */
-	return http_recieve(sock, resp);
+	return 0;
 err_write:
 	perror("write");
 	return -1;
