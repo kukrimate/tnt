@@ -3,17 +3,19 @@ PREFIX  := /usr/local
 
 # Compiler flags
 CFLAGS  := -std=c99 -D_GNU_SOURCE -pthread -pedantic -Wall \
-	-Wdeclaration-after-statement -Wno-parentheses
+	-Wdeclaration-after-statement -Wno-parentheses \
+	-I/opt/libressl/include
 LDFLAGS := -pthread
+LIBS    := -L/opt/libressl/lib -l:libtls.a -l:libssl.a -l:libcrypto.a
 
 # Object files
-OBJ := url.o dynarr.o http.o tnt.o
+OBJ := dynarr.o url.o conn.o http.o tnt.o
 
 .PHONY: all
 all: tnt
 
 tnt: $(OBJ)
-	$(CC) $(LDFLAGS) $(OBJ) -o $@
+	$(CC) $(LDFLAGS) $(OBJ) -o $@ $(LIBS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $^ -o $@

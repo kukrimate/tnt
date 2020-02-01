@@ -9,7 +9,10 @@
 #include <string.h>
 #include <ctype.h>
 #include <unistd.h>
+#include <arpa/inet.h>
 #include "dynarr.h"
+#include "url.h"
+#include "conn.h"
 #include "http.h"
 
 /*
@@ -29,7 +32,7 @@ static char *strstrip(char *s, size_t n)
 	return strndup(start, end - start + 1);
 }
 
-int http_recieve(int sock, dynarr *resp)
+int http_recieve(conn *conn, dynarr *resp)
 {
 	char buf[4096];
 	ssize_t len;
@@ -44,7 +47,7 @@ int http_recieve(int sock, dynarr *resp)
 	state = 0;
 
 	lchr = 0;
-	while (0 < (len = read(sock, buf, sizeof(buf))))
+	while (0 < (len = conn_read(conn, buf, sizeof(buf))))
 		for (bptr = buf; bptr < buf + len; lchr = *bptr, ++bptr) {
 			/* Append to temporary buffer */
 			dynarr_addc(&tmp, *bptr);
@@ -123,22 +126,26 @@ success:
 	return 0;
 }
 
-int http_send(int sock, dynarr *req)
+int http_send(conn *conn, dynarr *req)
 {
-	size_t i;
+	size_t i, l;
+	char buffer[4096];
 
-	if (0 > dprintf(sock, "%s %s %s\r\n",
-				(char *) dynarr_getp(req, 0),
-				(char *) dynarr_getp(req, 1),
-				(char *) dynarr_getp(req, 2)))
+	l = snprintf(buffer, sizeof(buffer), "%s %s %s\r\n",
+		(char *) dynarr_getp(req, 0),
+		(char *) dynarr_getp(req, 1),
+		(char *) dynarr_getp(req, 2));
+	if (-1 == conn_write(conn, buffer, l))
 		goto err_write;
+
 	for (i = 3; i < req->elem_count; i += 2) {
-		if (0 > dprintf(sock, "%s: %s\r\n",
-					(char *) dynarr_getp(req, i),
-					(char *) dynarr_getp(req, i + 1)))
+		l = snprintf(buffer, sizeof(buffer), "%s: %s\r\n",
+			(char *) dynarr_getp(req, i),
+			(char *) dynarr_getp(req, i + 1));
+		if (-1 == conn_write(conn, buffer, l))
 			goto err_write;
 	}
-	if (0 > dprintf(sock, "\r\n"))
+	if (-1 == conn_write(conn, "\r\n", 2))
 		goto err_write;
 
 	return 0;

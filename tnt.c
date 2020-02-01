@@ -5,57 +5,23 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/sysinfo.h>
 #include <arpa/inet.h>
-#include <netdb.h>
+#include <sys/sysinfo.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <pthread.h>
 #include "dynarr.h"
 #include "url.h"
+#include "conn.h"
 #include "http.h"
 
-static int urltoaddr(url *url, struct sockaddr_in *addr)
-{
-	struct hostent *hent;
-
-	hent = gethostbyname(url->domain);
-	if (!hent) {
-		herror("gethostbyname");
-		return -1;
-	}
-
-	addr->sin_family = AF_INET;
-	addr->sin_port = htons(url->port);
-	addr->sin_addr.s_addr = *(in_addr_t *) hent->h_addr;
-
-	return 0;
-}
-
-static int tcpopen(struct sockaddr_in *addr)
-{
-	int sock;
-
-	sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if (-1 == sock) {
-		perror("socket");
-		return -1;
-	}
-	if (-1 == connect(sock, addr, sizeof(struct sockaddr_in))) {
-		perror("connect");
-		return -1;
-	}
-
-	return sock;
-}
-
-static int runfuzz(struct sockaddr_in *addr, char *host, dynarr *plist)
+static int runfuzz(conn_addr *addr, char *host, dynarr *plist)
 {
 	dynarr req, resp;
-	int reconnect, sock;
+	int reconnect;
+	conn conn;
 	char **cur, *end;
 	size_t i;
 
@@ -63,8 +29,7 @@ static int runfuzz(struct sockaddr_in *addr, char *host, dynarr *plist)
 	dynarr_new(&resp, sizeof(char *));
 
 	reconnect = 0;
-	sock = tcpopen(addr);
-	if (-1 == sock)
+	if (-1 == conn_open(addr, &conn))
 		goto err;
 
 	cur = dynarr_ptr(plist, 0);
@@ -72,9 +37,8 @@ static int runfuzz(struct sockaddr_in *addr, char *host, dynarr *plist)
 
 	while ((char *) cur < end) {
 		if (reconnect) {
-			close(sock);
-			sock = tcpopen(addr);
-			if (-1 == sock)
+			conn_close(&conn);
+			if (-1 == conn_open(addr, &conn))
 				goto err;
 			reconnect = 0;
 		}
@@ -87,9 +51,9 @@ static int runfuzz(struct sockaddr_in *addr, char *host, dynarr *plist)
 		dynarr_addp(&req, "Connection");
 		dynarr_addp(&req, "keep-alive");
 
-		if (-1 == http_send(sock, &req) ||
-				-1 == http_recieve(sock, &resp)) {
-			close(sock);
+		if (-1 == http_send(&conn, &req) ||
+				-1 == http_recieve(&conn, &resp)) {
+			conn_close(&conn);
 			goto err;
 		}
 		printf("Path: %s Status: %s\n", *cur++, (char *) dynarr_getp(&resp, 1));
@@ -109,6 +73,7 @@ static int runfuzz(struct sockaddr_in *addr, char *host, dynarr *plist)
 		resp.elem_count = 0;
 	}
 
+	conn_close(&conn);
 	dynarr_del(&req);
 	dynarr_del(&resp);
 	return 0;
@@ -122,7 +87,7 @@ typedef struct {
 	/* Thread ID */
 	pthread_t tid;
 	/* Address of the target server */
-	struct sockaddr_in *addr;
+	conn_addr *addr;
 	/* Host string */
 	char *host;
 	/* List of paths */
@@ -136,7 +101,7 @@ static void *fuzzthread_start(fuzzthread *args)
 	return args;
 }
 
-static int spawn_threads(int tcount, struct sockaddr_in *addr, char *host,
+static int spawn_threads(int tcount, conn_addr *addr, char *host,
 	dynarr *plist)
 {
 	int status;
@@ -256,7 +221,7 @@ static int prog(int opt_threads, char *opt_wordlist, char *opt_url)
 {
 	url url;
 	dynarr wlist;
-	struct sockaddr_in addr;
+	conn_addr addr;
 
 	if (-1 == url_parse(opt_url, &url)) {
 		fprintf(stderr, "Invalid URL\n");
@@ -273,7 +238,7 @@ static int prog(int opt_threads, char *opt_wordlist, char *opt_url)
 		goto err_url;
 	}
 
-	if (-1 == urltoaddr(&url, &addr) ||
+	if (-1 == conn_urltoaddr(&url, &addr) ||
 		-1 == spawn_threads(opt_threads, &addr, url.domain, &wlist))
 		goto err_wlist;
 
