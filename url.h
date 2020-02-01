@@ -1,6 +1,11 @@
 #ifndef URL_H
 #define URL_H
 
+/*
+ * Escape a string using the method in RFC2396
+ */
+char *urlescape(char *s, size_t n);
+
 typedef enum {
 	PROTO_HTTP,
 	PROTO_HTTPS

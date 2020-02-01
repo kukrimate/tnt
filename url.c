@@ -8,7 +8,52 @@
 #include <stdint.h>
 #include <string.h>
 #include <errno.h>
+#include "dynarr.h"
 #include "url.h"
+
+static char *hexdigits = "0123456789abcdef";
+
+static void addesc(dynarr *x, char c)
+{
+	dynarr_addc(x, '%');
+	dynarr_addc(x, hexdigits[c >> 4 & 0xf]);
+	dynarr_addc(x, hexdigits[c & 0xf]);
+}
+
+char *urlescape(char *s, size_t n)
+{
+	char *p;
+	dynarr tmp;
+
+	dynarr_new(&tmp, sizeof(char));
+	for (p = s; p < s + n; ++p) {
+		if (*p <= 0x20) /* control and space */
+			addesc(&tmp, *p);
+		else
+			switch (*p) {
+			case '<':
+			case '>':
+			case '#':
+			case '%':
+			case '"':
+			case '{':
+			case '}':
+			case '|':
+			case '\\':
+			case '^':
+			case '[':
+			case ']':
+			case '`':
+				addesc(&tmp, *p);
+				break;
+			default:
+				dynarr_addc(&tmp, *p);
+				break;
+			}
+	}
+	dynarr_addc(&tmp, 0);
+	return tmp.buffer;
+}
 
 /*
  * Check if a string represents a base 10, positive integer

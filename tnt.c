@@ -190,8 +190,10 @@ static char *template_gen(char *template, char *old, char *new)
 	dynarr_add(&res, begin - template, template);
 	dynarr_add(&res, strlen(new), new);
 	dynarr_add(&res, strlen(template) - (end - template), end);
-	dynarr_addc(&res, 0);
-	return res.buffer;
+
+	begin = urlescape(res.buffer, res.elem_count);
+	dynarr_del(&res);
+	return begin;
 }
 
 static int genlist(char *file, char *template, dynarr *list)
