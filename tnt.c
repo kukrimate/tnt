@@ -212,13 +212,15 @@ err:
 /*
  * Actual program functionality called from 'main' after option parsing
  */
-static int prog(int opt_threads, char *opt_wordlist, char *opt_url)
+static int prog(int opt_threads, int opt_insecure,
+	char *opt_wordlist, char *opt_url)
 {
 	url url;
 	dynarr wlist;
 
 	if (-1 == url_parse(opt_url, &url))
 		return 1;
+	url.server.insecure = opt_insecure;
 
 	if (!strstr(url.path, "FUZZ")) {
 		fprintf(stderr, "URL must include 'FUZZ'\n");
@@ -247,14 +249,15 @@ err_url:
 
 int main(int argc, char *argv[])
 {
-	int opt, opt_threads;
+	int opt, opt_threads, opt_insecure;
 	char *opt_wordlist, *opt_url;
 
 	opt_threads = get_nprocs();
+	opt_insecure = 0;
 	opt_wordlist = NULL;
 	opt_url = NULL;
 
-	while (-1 != (opt = getopt(argc, argv, "t:w:u:h")))
+	while (-1 != (opt = getopt(argc, argv, "t:iw:u:h")))
 		switch (opt) {
 		case 't':
 			opt_threads = strtol(optarg, NULL, 10);
@@ -264,6 +267,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'u':
 			opt_url = optarg;
+			break;
+		case 'i':
+			opt_insecure = 1;
 			break;
 		case 'h':
 		default:
@@ -283,8 +289,8 @@ int main(int argc, char *argv[])
 		goto usage;
 	}
 
-	return prog(opt_threads, opt_wordlist, opt_url);
+	return prog(opt_threads, opt_insecure, opt_wordlist, opt_url);
 usage:
-	printf("Usage: %s [-t THREADS] -w WORDLIST -u URL\n", argv[0]);
+	printf("Usage: %s [-t THREADS] [-i] -w WORDLIST -u URL\n", argv[0]);
 	return 1;
 }

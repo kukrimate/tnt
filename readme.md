@@ -12,6 +12,7 @@ using `make install` or just run it from the build directory.
 
 It accepts the following options:
 - `-t`: optional, changes the number of threads, by default it's set to `nproc`
+- `-i`; optional, if set than certificate errors will be ignored when using TLS
 - `-w`: required, the wordlist file, it should contain newline separated words,
 	the words are used to replace `FUZZ` in the URL template
 - `-u`: required, the target URL template, must include the word `FUZZ`, e.g.

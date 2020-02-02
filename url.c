@@ -140,9 +140,10 @@ int url_parse(char *str, url *url)
 	if (-1 == sane_getaddrinfo(domain, (uint16_t) port, &url->server.addr))
 		goto err_free;
 
-	url->server.proto = proto;
-	url->server.name  = domain;
-	url->path         = strdup(path_start);
+	url->server.proto    = proto;
+	url->server.name     = domain;
+	url->server.insecure = 0;
+	url->path            = strdup(path_start);
 	return 0;
 err_free:
 	free(domain);

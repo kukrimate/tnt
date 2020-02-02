@@ -32,7 +32,8 @@ static int tcpopen(struct sockaddr *addr, socklen_t addr_len)
 	return sock;
 }
 
-static int tlsopen(int sockfd, char *sni_name, conn *conn)
+static int tlsopen(int sockfd, char *sni_name, int insecure,
+	struct tls **out_client)
 {
 	struct tls_config *config;
 	struct tls *client;
@@ -40,7 +41,8 @@ static int tlsopen(int sockfd, char *sni_name, conn *conn)
 	config = tls_config_new();
 	if (!config)
 		abort();
-	tls_config_insecure_noverifycert(config);
+	if (insecure)
+		tls_config_insecure_noverifycert(config);
 
 	client = tls_client();
 	if (!client)
@@ -56,7 +58,7 @@ static int tlsopen(int sockfd, char *sni_name, conn *conn)
 		goto err_close;
 	}
 
-	conn->tls_client = client;
+	*out_client = client;
 	tls_config_free(config);
 	return 0;
 
@@ -77,7 +79,8 @@ int conn_open(url_server *server, conn *conn)
 		return -1;
 
 	if (server->proto == PROTO_HTTPS) {
-		if (-1 == tlsopen(sockfd, server->name, conn))
+		if (-1 == tlsopen(sockfd, server->name,
+				server->insecure, (struct tls **) &conn->tls_client))
 			goto err_close;
 	} else {
 		conn->tls_client = NULL;

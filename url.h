@@ -26,6 +26,11 @@ typedef struct {
 	 * Server name (Used for SNI and Host header)
 	 */
 	char *name;
+
+	/*
+	 * Ignore TLS certificate errors
+	 */
+	int insecure;
 } url_server;
 
 typedef struct {
