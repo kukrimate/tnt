@@ -91,6 +91,14 @@ err_close:
 	return -1;
 }
 
+void conn_perror(conn *conn, char *s)
+{
+	if (conn->tls_client)
+		fprintf(stderr, "%s: %s\n", s, tls_error(conn->tls_client));
+	else
+		perror(s);
+}
+
 ssize_t conn_write(conn *conn, void *buf, size_t nbyte)
 {
 	if (conn->tls_client)

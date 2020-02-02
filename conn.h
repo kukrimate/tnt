@@ -18,6 +18,11 @@ typedef struct {
 int conn_open(url_server *server, conn *conn);
 
 /*
+ * Print read/write errors
+ */
+void conn_perror(conn *conn, char *s);
+
+/*
  * Write to a connection
  */
 ssize_t conn_write(conn *conn, void *buf, size_t nbyte);

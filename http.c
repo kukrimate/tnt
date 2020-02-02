@@ -127,7 +127,7 @@ int http_recieve(conn *conn, dynarr *resp)
 
 fail:
 	if (-1 == len)
-		perror("read");
+		conn_perror(conn, "conn_read");
 	else
 		fprintf(stderr, "Malformed HTTP response\n");
 
@@ -166,6 +166,6 @@ int http_send(conn *conn, dynarr *req)
 
 	return 0;
 err_write:
-	perror("write");
+	conn_perror(conn, "conn_write");
 	return -1;
 }
