@@ -108,6 +108,8 @@ static int spawn_threads(int tcount, url_server *server, dynarr *plist)
 
 	status = 0;
 	tptr = malloc(tcount * sizeof(fuzzthread));
+	if (!tptr)
+		abort();
 	pleft = plist->elem_count;
 
 	for (cnt = tcount; cnt--; ++tptr) {

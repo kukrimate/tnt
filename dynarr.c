@@ -19,6 +19,8 @@ static void dynarr_grow(dynarr *x, size_t cnt)
 	if (x->buffer_size < needed_size) {
 		x->buffer_size = needed_size * 2;
 		x->buffer = realloc(x->buffer, x->buffer_size);
+		if (!x->buffer)
+			abort();
 	}
 }
 
