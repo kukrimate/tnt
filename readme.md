@@ -6,6 +6,11 @@ This tool is designed for security testing. If you use this tool, it is **your**
 responsibility to make sure you have permission to use it on the target system.
 IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR THE (MIS)USE OF THIS TOOL.
 
+## Dependencies
+TNT uses LibreSSL for TLS support, if you are on Linux you will likely need to
+build this library from source. By default the Makefile expects it to be in
+`/opt/libressl`, other locations require the Makefile to be edited.
+
 ## Usage
 Clone the repository, build with `make`. Either install the TNT binary
 using `make install` or just run it from the build directory.
