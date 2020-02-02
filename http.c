@@ -32,61 +32,76 @@ static char *strstrip(char *s, size_t n)
 	return strndup(start, end - start + 1);
 }
 
+typedef enum {
+	VERSION = 0,
+	STATUS  = 1,
+	REASON  = 2,
+	HDR_NAM = 3,
+	HDR_VAL = 4
+} http_resp_state;
+
 int http_recieve(conn *conn, dynarr *resp)
 {
-	char buf[4096];
 	ssize_t len;
-	char *bptr;	/* Current position in the buffer */
-	char lchr;	/* The last character saved */
+	char buf[4096];
+
+	char lchr;	/* Last character */
+	char *bptr;	/* Current character */
+
 	dynarr tmp;
-	int state;	/* Current message state: 0-2: Parts of the first line
-										  3-4: Name and value of a header */
+	http_resp_state state;
 	size_t i;
 
 	dynarr_new(&tmp, sizeof(char));
-	state = 0;
+	state = VERSION;
 
 	lchr = 0;
 	while (0 < (len = conn_read(conn, buf, sizeof(buf))))
 		for (bptr = buf; bptr < buf + len; lchr = *bptr, ++bptr) {
-			/* Append to temporary buffer */
 			dynarr_addc(&tmp, *bptr);
 
 			switch (*bptr) {
-			/* Transition from 0 to 1, or from 1 to 2 */
 			case ' ':
 				switch (state) {
-				case 0:
-				case 1:
+				case VERSION:
 					dynarr_addp(resp,
 						strstrip(tmp.buffer, tmp.elem_count - 1));
 					tmp.elem_count = 0;
-					++state;
+					state = STATUS;
+					break;
+				case STATUS:
+					dynarr_addp(resp,
+						strstrip(tmp.buffer, tmp.elem_count - 1));
+					tmp.elem_count = 0;
+					state = REASON;
+					break;
+				default:
 					break;
 				}
 				break;
 
-			/* Transition from 2 to 3, or from 4 to 3 */
 			case '\n':
 			 	/* HTTP spec uses CRLF */
 				if (lchr != '\r')
 					continue;
+
 				switch (state) {
-				case 2:
+				case REASON:
 					dynarr_addp(resp,
 						strstrip(tmp.buffer, tmp.elem_count - 2));
 					tmp.elem_count = 0;
-					++state;
+					state = HDR_NAM;
 					break;
-				case 4:
+				case HDR_VAL:
 					dynarr_addp(resp,
 						strstrip(tmp.buffer, tmp.elem_count - 2));
 					tmp.elem_count = 0;
-					--state;
+					state = HDR_NAM;
 					break;
+
 				/* Message ends by empty header */
-				case 3:
-					if (tmp.elem_count == 2)
+				case HDR_NAM:
+					if (2 == tmp.elem_count)
 						goto success;
 
 				/* CRLF in any other state means a malformed message */
@@ -95,14 +110,15 @@ int http_recieve(conn *conn, dynarr *resp)
 				}
 				break;
 
-			/* Transition from 3 to 4 */
 			case ':':
 				switch (state) {
-				case 3:
+				case HDR_NAM:
 					dynarr_addp(resp,
 						strstrip(tmp.buffer, tmp.elem_count - 1));
 					tmp.elem_count = 0;
-					++state;
+					state = HDR_VAL;
+					break;
+				default:
 					break;
 				}
 				break;
