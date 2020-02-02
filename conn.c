@@ -135,7 +135,9 @@ ssize_t conn_read(conn *conn, void *buf, size_t nbyte)
 
 void conn_close(conn *conn)
 {
-	if (conn->tls_client)
+	if (conn->tls_client) {
 		tls_close(conn->tls_client);
+		tls_free(conn->tls_client);
+	}
 	close(conn->sockfd);
 }

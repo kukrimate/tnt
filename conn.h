@@ -2,29 +2,29 @@
 #define CONN_H
 
 typedef struct {
-    /*
-     * Use TLS to connect
-     */
+	/*
+	 * Use TLS to connect
+	 */
 	int                 use_tls;
 	/*
-     * IP (v4) address + port
-     */
+	 * IP (v4) address + port
+	 */
 	struct sockaddr_in  in_addr;
 	/*
-     * SNI name (TLS SNI)
-     */
+	 * SNI name (TLS SNI)
+	 */
 	char               *sni_name;
 } conn_addr;
 
 typedef struct {
 	/*
-     * File Descriptor for the socket
-     */
+	 * File Descriptor for the socket
+	 */
 	int sockfd;
-    /*
-     * TLS client (NULL on plain-text connections)
-     */
-    void *tls_client;
+	/*
+	 * TLS client (NULL on plain-text connections)
+	 */
+	void *tls_client;
 } conn;
 
 /*

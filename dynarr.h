@@ -1,9 +1,7 @@
 #ifndef DYNARR_H
 #define DYNARR_H
 
-typedef struct dynarr dynarr;
-
-struct dynarr {
+typedef struct{
 	/* element size */
 	size_t elem_size;
 	/* # of elements */
@@ -12,7 +10,7 @@ struct dynarr {
 	size_t buffer_size;
 	/* buffer */
 	void *buffer;
-};
+} dynarr;
 
 /*
  * Create a new dynamic array in x with an element size of elem_size
