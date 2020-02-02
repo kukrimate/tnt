@@ -41,8 +41,11 @@ static int tlsopen(int sockfd, char *sni_name, int insecure,
 	config = tls_config_new();
 	if (!config)
 		abort();
-	if (insecure)
+	if (insecure) {
 		tls_config_insecure_noverifycert(config);
+		tls_config_insecure_noverifyname(config);
+		tls_config_insecure_noverifytime(config);
+	}
 
 	client = tls_client();
 	if (!client)
