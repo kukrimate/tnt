@@ -4,7 +4,7 @@
 /*
  * Recieve an HTTP response over a connection
  */
-int http_recieve(conn *conn, dynarr *resp);
+int http_recieve(conn *conn, dynarr *resp, size_t *content_bytes_consumed);
 
 /*
  * Send an HTTP request over a connection

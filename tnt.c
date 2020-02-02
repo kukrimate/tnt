@@ -23,7 +23,7 @@ static int runfuzz(url_server *server, dynarr *plist)
 	int reconnect;
 	conn conn;
 	char **cur, *end;
-	size_t i;
+	size_t i, consumed;
 
 	dynarr_new(&req, sizeof(char *));
 	dynarr_new(&resp, sizeof(char *));
@@ -52,7 +52,7 @@ static int runfuzz(url_server *server, dynarr *plist)
 		dynarr_addp(&req, "keep-alive");
 
 		if (-1 == http_send(&conn, &req) ||
-				-1 == http_recieve(&conn, &resp)) {
+				-1 == http_recieve(&conn, &resp, &consumed)) {
 			conn_close(&conn);
 			goto err;
 		}
@@ -61,6 +61,11 @@ static int runfuzz(url_server *server, dynarr *plist)
 		for (i = 3; i < resp.elem_count; i+=2) {
 			if (!strcasecmp(dynarr_getp(&resp, i), "Connection") &&
 					!strcasecmp(dynarr_getp(&resp, i + 1), "close"))
+				reconnect = 1;
+
+			/* If we didn't read the whole response, we can't use keep-alive */
+			if (!strcasecmp(dynarr_getp(&resp, i), "Content-Length")
+				 	&& consumed < strtol(dynarr_getp(&resp, i + 1), NULL, 10))
 				reconnect = 1;
 		}
 

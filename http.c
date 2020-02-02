@@ -40,7 +40,7 @@ typedef enum {
 	HDR_VAL = 4
 } http_resp_state;
 
-int http_recieve(conn *conn, dynarr *resp)
+int http_recieve(conn *conn, dynarr *resp, size_t *content_bytes_consumed)
 {
 	ssize_t len;
 	char buf[4096];
@@ -81,7 +81,7 @@ int http_recieve(conn *conn, dynarr *resp)
 				break;
 
 			case '\n':
-			 	/* HTTP spec uses CRLF */
+				/* HTTP spec uses CRLF */
 				if (lchr != '\r')
 					continue;
 
@@ -129,7 +129,7 @@ fail:
 	if (-1 == len)
 		conn_perror(conn, "conn_read");
 	else
-		fprintf(stderr, "Malformed HTTP response\n");
+		fprintf(stderr, "http_recieve: Malformed HTTP response\n");
 
 	for (i = 0; i < resp->elem_count; ++i)
 		free(dynarr_getp(resp, i));
@@ -138,6 +138,7 @@ fail:
 	return -1;
 
 success:
+	*content_bytes_consumed = len - (bptr - buf) - 1;
 	dynarr_del(&tmp);
 	return 0;
 }
