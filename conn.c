@@ -15,44 +15,16 @@
 #include "url.h"
 #include "conn.h"
 
-int conn_urltoaddr(url *url, conn_addr *addr)
-{
-	struct hostent *hent;
-
-	hent = gethostbyname(url->domain);
-	if (!hent) {
-		herror("gethostbyname");
-		return -1;
-	}
-
-	switch (url->proto) {
-	case PROTO_HTTP:
-		addr->use_tls = 0;
-		break;
-	case PROTO_HTTPS:
-		addr->use_tls = 1;
-		break;
-	}
-
-	addr->in_addr.sin_family = AF_INET;
-	addr->in_addr.sin_port = htons(url->port);
-	addr->in_addr.sin_addr.s_addr = *(in_addr_t *) hent->h_addr;
-
-	addr->sni_name = url->domain;
-
-	return 0;
-}
-
-static int tcpopen(struct sockaddr_in *addr)
+static int tcpopen(struct sockaddr *addr, socklen_t addr_len)
 {
 	int sock;
 
-	sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	sock = socket(addr->sa_family, SOCK_STREAM, IPPROTO_TCP);
 	if (-1 == sock) {
 		perror("socket");
 		return -1;
 	}
-	if (-1 == connect(sock, addr, sizeof(struct sockaddr_in))) {
+	if (-1 == connect(sock, addr, addr_len)) {
 		perror("connect");
 		return -1;
 	}
@@ -60,7 +32,7 @@ static int tcpopen(struct sockaddr_in *addr)
 	return sock;
 }
 
-static int tlsopen(conn_addr *addr, conn *conn)
+static int tlsopen(int sockfd, char *sni_name, conn *conn)
 {
 	struct tls_config *config;
 	struct tls *client;
@@ -75,7 +47,7 @@ static int tlsopen(conn_addr *addr, conn *conn)
 		abort();
 
 	if (-1 == tls_configure(client, config) ||
-		-1 == tls_connect_socket(client, conn->sockfd, addr->sni_name)) {
+		-1 == tls_connect_socket(client, sockfd, sni_name)) {
 		fprintf(stderr, "%s\n", tls_error(client));
 		goto err_free;
 	}
@@ -96,24 +68,26 @@ err_free:
 	return -1;
 }
 
-int conn_open(conn_addr *addr, conn *conn)
+int conn_open(url_server *server, conn *conn)
 {
 	int sockfd;
 
-	sockfd = tcpopen(&addr->in_addr);
+	sockfd = tcpopen(server->addr->ai_addr, server->addr->ai_addrlen);
 	if (-1 == sockfd)
 		return -1;
 
-	conn->sockfd     = sockfd;
-	conn->tls_client = NULL;
-	if (addr->use_tls && -1 == tlsopen(addr, conn)) {
-		goto err_close;
+	if (server->proto == PROTO_HTTPS) {
+		if (-1 == tlsopen(sockfd, server->name, conn))
+			goto err_close;
+	} else {
+		conn->tls_client = NULL;
 	}
 
+	conn->sockfd = sockfd;
 	return 0;
+
 err_close:
 	close(sockfd);
-	conn->sockfd = 0;
 	return -1;
 }
 

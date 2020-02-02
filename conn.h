@@ -3,21 +3,6 @@
 
 typedef struct {
 	/*
-	 * Use TLS to connect
-	 */
-	int                 use_tls;
-	/*
-	 * IP (v4) address + port
-	 */
-	struct sockaddr_in  in_addr;
-	/*
-	 * SNI name (TLS SNI)
-	 */
-	char               *sni_name;
-} conn_addr;
-
-typedef struct {
-	/*
 	 * File Descriptor for the socket
 	 */
 	int sockfd;
@@ -28,14 +13,9 @@ typedef struct {
 } conn;
 
 /*
- * Resolv DNS, and create a conn_addr structure
- */
-int conn_urltoaddr(url *url, conn_addr *addr);
-
-/*
  * Open a connection to the server
  */
-int conn_open(conn_addr *addr, conn *conn);
+int conn_open(url_server *server, conn *conn);
 
 /*
  * Write to a connection

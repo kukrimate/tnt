@@ -8,6 +8,9 @@
 #include <stdint.h>
 #include <string.h>
 #include <errno.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
 #include "dynarr.h"
 #include "url.h"
 
@@ -55,9 +58,6 @@ char *urlescape(char *s, size_t n)
 	return tmp.buffer;
 }
 
-/*
- * Check if a string represents a base 10, positive integer
- */
 static int isnum(char *str, size_t len)
 {
 	char *p;
@@ -70,26 +70,46 @@ static int isnum(char *str, size_t len)
 	return 1;
 }
 
+static int sane_getaddrinfo(char *host, uint16_t port, struct addrinfo **out)
+{
+	char buffer[10];
+	int err;
+
+	snprintf(buffer, sizeof(buffer), "%d", port);
+
+	err = getaddrinfo(host, buffer, NULL, out);
+	if (err) {
+		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(err));
+		return -1;
+	}
+
+	return 0;
+}
+
 int url_parse(char *str, url *url)
 {
 	char *proto_end, *path_start, *port_start;
 	long int port;
 
+	url_proto proto;
+	char *domain;
+
 	proto_end = strstr(str, "://");
 	if (proto_end) {
 		if (!strncmp(str, "http", proto_end - str)) {
-			url->proto = PROTO_HTTP;
-			url->port = 80;
+			proto = PROTO_HTTP;
+			port = 80;
 		} else if (!strncmp(str, "https", proto_end - str)) {
-			url->proto = PROTO_HTTPS;
-			url->port = 443;
+			proto = PROTO_HTTPS;
+			port = 443;
 		} else {
-			return -1;
+			fprintf(stderr, "url_parse: Unknown protocol\n");
+			goto err;
 		}
 		proto_end += 3; /* Skip :// */
 	} else {
-		url->proto = PROTO_HTTP;
-		url->port = 80;
+		proto = PROTO_HTTP;
+		port = 80;
 		proto_end = str;
 	}
 
@@ -99,27 +119,40 @@ int url_parse(char *str, url *url)
 
 	port_start = strchr(proto_end, ':');
 	if (port_start) {
-		if (port_start + 1 >= path_start)
-			return -1;
-		if (!isnum(port_start + 1, path_start - (port_start + 1)))
-			return -1;
+		if (port_start + 1 >= path_start) {
+			fprintf(stderr, "url_parse: Zero length port\n");
+			goto err;
+		}
+		if (!isnum(port_start + 1, path_start - (port_start + 1))) {
+			fprintf(stderr, "url_parse: Non-numeric port\n");
+			goto err;
+		}
 		port = strtol(port_start + 1, NULL, 10);
-		if (errno) /* Make sure conversion didn't overflow */
-			return -1;
-		if (port > 65535) /* Make sure the port is not out of range */
-			return -1;
-		url->port = (uint16_t) port;
+		if (errno || port > 65535) {
+			fprintf(stderr, "url_parse: Port out of range\n");
+			goto err;
+		}
 	} else {
 		port_start = path_start;
 	}
 
-	url->domain = strndup(proto_end, port_start - proto_end);
-	url->path = strdup(path_start);
+	domain = strndup(proto_end, port_start - proto_end);
+	if (-1 == sane_getaddrinfo(domain, (uint16_t) port, &url->server.addr))
+		goto err_free;
+
+	url->server.proto = proto;
+	url->server.name  = domain;
+	url->path         = strdup(path_start);
 	return 0;
+err_free:
+	free(domain);
+err:
+	return -1;
 }
 
 void url_free(url *url)
 {
-	free(url->domain);
+	freeaddrinfo(url->server.addr);
+	free(url->server.name);
 	free(url->path);
 }

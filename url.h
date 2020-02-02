@@ -18,14 +18,21 @@ typedef struct {
 	url_proto proto;
 
 	/*
-	 * Domain name
+	 * Address + port
 	 */
-	char *domain;
+	struct addrinfo *addr;
 
 	/*
-	 * Port
+	 * Server name (Used for SNI and Host header)
 	 */
-	uint16_t port;
+	char *name;
+} url_server;
+
+typedef struct {
+	/*
+	 * Server
+	 */
+	url_server server;
 
 	/*
 	 * Request path

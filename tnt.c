@@ -17,7 +17,7 @@
 #include "conn.h"
 #include "http.h"
 
-static int runfuzz(conn_addr *addr, char *host, dynarr *plist)
+static int runfuzz(url_server *server, dynarr *plist)
 {
 	dynarr req, resp;
 	int reconnect;
@@ -29,7 +29,7 @@ static int runfuzz(conn_addr *addr, char *host, dynarr *plist)
 	dynarr_new(&resp, sizeof(char *));
 
 	reconnect = 0;
-	if (-1 == conn_open(addr, &conn))
+	if (-1 == conn_open(server, &conn))
 		goto err;
 
 	cur = dynarr_ptr(plist, 0);
@@ -38,7 +38,7 @@ static int runfuzz(conn_addr *addr, char *host, dynarr *plist)
 	while ((char *) cur < end) {
 		if (reconnect) {
 			conn_close(&conn);
-			if (-1 == conn_open(addr, &conn))
+			if (-1 == conn_open(server, &conn))
 				goto err;
 			reconnect = 0;
 		}
@@ -47,7 +47,7 @@ static int runfuzz(conn_addr *addr, char *host, dynarr *plist)
 		dynarr_addp(&req, *cur);
 		dynarr_addp(&req, "HTTP/1.1");
 		dynarr_addp(&req, "Host");
-		dynarr_addp(&req, host);
+		dynarr_addp(&req, server->name);
 		dynarr_addp(&req, "Connection");
 		dynarr_addp(&req, "keep-alive");
 
@@ -86,23 +86,20 @@ err:
 typedef struct {
 	/* Thread ID */
 	pthread_t tid;
-	/* Address of the target server */
-	conn_addr *addr;
-	/* Host string */
-	char *host;
+	/* Target server */
+	url_server *server;
 	/* List of paths */
 	dynarr plist;
 } fuzzthread;
 
 static void *fuzzthread_start(fuzzthread *args)
 {
-	if (-1 == runfuzz(args->addr, args->host, &args->plist))
+	if (-1 == runfuzz(args->server, &args->plist))
 		return NULL;
 	return args;
 }
 
-static int spawn_threads(int tcount, conn_addr *addr, char *host,
-	dynarr *plist)
+static int spawn_threads(int tcount, url_server *server, dynarr *plist)
 {
 	int status;
 	fuzzthread *tptr;
@@ -114,9 +111,7 @@ static int spawn_threads(int tcount, conn_addr *addr, char *host,
 	pleft = plist->elem_count;
 
 	for (cnt = tcount; cnt--; ++tptr) {
-		tptr->addr = addr;
-		tptr->host = host;
-
+		tptr->server = server;
 		dynarr_new(&tptr->plist, sizeof(char *));
 		if (cnt) {
 			pleft -= plist->elem_count / tcount;
@@ -221,12 +216,10 @@ static int prog(int opt_threads, char *opt_wordlist, char *opt_url)
 {
 	url url;
 	dynarr wlist;
-	conn_addr addr;
 
-	if (-1 == url_parse(opt_url, &url)) {
-		fprintf(stderr, "Invalid URL\n");
+	if (-1 == url_parse(opt_url, &url))
 		return 1;
-	}
+
 	if (!strstr(url.path, "FUZZ")) {
 		fprintf(stderr, "URL must include 'FUZZ'\n");
 		goto err_url;
@@ -238,8 +231,7 @@ static int prog(int opt_threads, char *opt_wordlist, char *opt_url)
 		goto err_url;
 	}
 
-	if (-1 == conn_urltoaddr(&url, &addr) ||
-		-1 == spawn_threads(opt_threads, &addr, url.domain, &wlist))
+	if (-1 == spawn_threads(opt_threads, &url.server, &wlist))
 		goto err_wlist;
 
 	dynarr_delall(&wlist);

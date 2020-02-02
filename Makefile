@@ -4,7 +4,7 @@ PREFIX  := /usr/local
 # Compiler flags
 CFLAGS  := -std=c99 -D_GNU_SOURCE -pthread -pedantic -Wall \
 	-Wdeclaration-after-statement -Wno-parentheses \
-	-I/opt/libressl/include
+	-I/opt/libressl/include -g
 LDFLAGS := -pthread
 LIBS    := -L/opt/libressl/lib -l:libtls.a -l:libssl.a -l:libcrypto.a
 
