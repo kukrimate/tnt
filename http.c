@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include "dynarr.h"
+#include "htab.h"
 #include "url.h"
 #include "conn.h"
 #include "http.h"
@@ -40,7 +41,7 @@ typedef enum {
 	HDR_VAL = 4
 } http_resp_state;
 
-int http_recieve(conn *conn, dynarr *resp, size_t *content_bytes_consumed)
+int http_recieve(conn *conn, http_response *resp, size_t *consumed)
 {
 	ssize_t len;
 	char buf[4096];
@@ -48,9 +49,14 @@ int http_recieve(conn *conn, dynarr *resp, size_t *content_bytes_consumed)
 	char lchr;	/* Last character */
 	char *bptr;	/* Current character */
 
+	char *hdr_nam; /* Current header name */
+
 	dynarr tmp;
 	http_resp_state state;
-	size_t i;
+
+	bzero(resp, sizeof(http_response));
+	htab_new(&resp->headers, 100);
+	hdr_nam = NULL;
 
 	dynarr_new(&tmp, sizeof(char));
 	state = VERSION;
@@ -64,16 +70,26 @@ int http_recieve(conn *conn, dynarr *resp, size_t *content_bytes_consumed)
 			case ' ':
 				switch (state) {
 				case VERSION:
-					dynarr_addp(resp,
-						strstrip(tmp.buffer, tmp.elem_count - 1));
+					resp->version = strstrip(tmp.buffer, tmp.elem_count - 1);
 					tmp.elem_count = 0;
 					state = STATUS;
 					break;
 				case STATUS:
-					dynarr_addp(resp,
-						strstrip(tmp.buffer, tmp.elem_count - 1));
+					resp->status = strstrip(tmp.buffer, tmp.elem_count - 1);
 					tmp.elem_count = 0;
 					state = REASON;
+					break;
+				default:
+					break;
+				}
+				break;
+
+			case ':':
+				switch (state) {
+				case HDR_NAM:
+					hdr_nam = strstrip(tmp.buffer, tmp.elem_count - 1);
+					tmp.elem_count = 0;
+					state = HDR_VAL;
 					break;
 				default:
 					break;
@@ -87,14 +103,14 @@ int http_recieve(conn *conn, dynarr *resp, size_t *content_bytes_consumed)
 
 				switch (state) {
 				case REASON:
-					dynarr_addp(resp,
-						strstrip(tmp.buffer, tmp.elem_count - 2));
+					resp->reason = strstrip(tmp.buffer, tmp.elem_count - 1);
 					tmp.elem_count = 0;
 					state = HDR_NAM;
 					break;
 				case HDR_VAL:
-					dynarr_addp(resp,
-						strstrip(tmp.buffer, tmp.elem_count - 2));
+					htab_put(&resp->headers, hdr_nam,
+						strstrip(tmp.buffer, tmp.elem_count - 2), 1);
+					hdr_nam = NULL;
 					tmp.elem_count = 0;
 					state = HDR_NAM;
 					break;
@@ -109,19 +125,6 @@ int http_recieve(conn *conn, dynarr *resp, size_t *content_bytes_consumed)
 					goto fail;
 				}
 				break;
-
-			case ':':
-				switch (state) {
-				case HDR_NAM:
-					dynarr_addp(resp,
-						strstrip(tmp.buffer, tmp.elem_count - 1));
-					tmp.elem_count = 0;
-					state = HDR_VAL;
-					break;
-				default:
-					break;
-				}
-				break;
 			}
 		}
 
@@ -131,14 +134,20 @@ fail:
 	else
 		fprintf(stderr, "http_recieve: Malformed HTTP response\n");
 
-	for (i = 0; i < resp->elem_count; ++i)
-		free(dynarr_getp(resp, i));
-	resp->elem_count = 0;
+	if (hdr_nam)
+		free(hdr_nam);
+	if (resp->version)
+		free(resp->version);
+	if (resp->status)
+		free(resp->status);
+	if (resp->reason)
+		free(resp->reason);
+	htab_del(&resp->headers, 1);
 	dynarr_del(&tmp);
 	return -1;
 
 success:
-	*content_bytes_consumed = len - (bptr - buf) - 1;
+	*consumed = len - (bptr - buf) - 1;
 	dynarr_del(&tmp);
 	return 0;
 }

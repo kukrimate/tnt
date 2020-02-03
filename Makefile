@@ -9,7 +9,7 @@ LDFLAGS := -pthread
 LIBS    := -L/opt/libressl/lib -l:libtls.a -l:libssl.a -l:libcrypto.a
 
 # Object files
-OBJ := dynarr.o url.o conn.o http.o tnt.o
+OBJ := dynarr.o htab.o url.o conn.o http.o tnt.o
 
 .PHONY: all
 all: tnt

@@ -13,20 +13,22 @@
 #include <unistd.h>
 #include <pthread.h>
 #include "dynarr.h"
+#include "htab.h"
 #include "url.h"
 #include "conn.h"
 #include "http.h"
 
 static int runfuzz(url_server *server, dynarr *plist)
 {
-	dynarr req, resp;
+	dynarr req;
+	http_response resp;
+
 	int reconnect;
 	conn conn;
-	char **cur, *end;
-	size_t i, consumed;
+	char **cur, *end, *tmp;
+	size_t consumed;
 
 	dynarr_new(&req, sizeof(char *));
-	dynarr_new(&resp, sizeof(char *));
 
 	reconnect = 0;
 	if (-1 == conn_open(server, &conn))
@@ -56,35 +58,30 @@ static int runfuzz(url_server *server, dynarr *plist)
 			conn_close(&conn);
 			goto err;
 		}
-		printf("Path: %s Status: %s\n", *cur++, (char *) dynarr_getp(&resp, 1));
+		printf("Path: %s Status: %s\n", *cur++, resp.status);
 
-		for (i = 3; i < resp.elem_count; i+=2) {
-			if (!strcasecmp(dynarr_getp(&resp, i), "Connection") &&
-					!strcasecmp(dynarr_getp(&resp, i + 1), "close"))
-				reconnect = 1;
-
-			/* If we didn't read the whole response, we can't use keep-alive */
-			if (!strcasecmp(dynarr_getp(&resp, i), "Content-Length")
-				 	&& consumed < strtol(dynarr_getp(&resp, i + 1), NULL, 10))
-				reconnect = 1;
-		}
+		tmp = htab_get(&resp.headers, "Connection");
+		if (tmp && !strcmp(tmp, "close"))
+			reconnect = 1;
+		tmp = htab_get(&resp.headers, "Content-Length");
+		if (tmp && consumed < strtol(tmp, NULL, 10))
+			reconnect = 1;
 
 		/* Discard request */
 		req.elem_count = 0;
 
 		/* Discard response */
-		for (i = 0; i < resp.elem_count; ++i)
-			free(dynarr_getp(&resp, i));
-		resp.elem_count = 0;
+		free(resp.version);
+		free(resp.status);
+		free(resp.reason);
+		htab_del(&resp.headers, 1);
 	}
 
 	conn_close(&conn);
 	dynarr_del(&req);
-	dynarr_del(&resp);
 	return 0;
 err:
 	dynarr_del(&req);
-	dynarr_del(&resp);
 	return -1;
 }
 
