@@ -88,7 +88,7 @@ static int sane_getaddrinfo(char *host, uint16_t port, struct addrinfo **out)
 
 int url_parse(char *str, url *url)
 {
-	char *proto_end, *path_start, *port_start;
+	char *proto_end, *path_start, *domain_start, *domain_end, *port_start;
 	long int port;
 
 	url_proto proto;
@@ -112,13 +112,40 @@ int url_parse(char *str, url *url)
 		port = 80;
 		proto_end = str;
 	}
+	domain_start = proto_end;
 
 	path_start = strchr(proto_end, '/');
 	if (!path_start)
 		path_start = proto_end + strlen(proto_end);
 
-	port_start = strchr(proto_end, ':');
-	if (port_start) {
+	if (*proto_end == '[') { /* IPv6 literal */
+		domain_end = strchr(proto_end, ']');
+		if (!domain_end) {
+			fprintf(stderr, "url_parse: Invalid IPv6 literal\n");
+			goto err;
+		}
+
+		if (++domain_end == path_start) {
+			port_start = NULL;
+		} else if (*domain_end == ':') {
+			port_start = domain_end;
+		} else {
+			fprintf(stderr, "url_parse: Text after IPv6 literal\n");
+			goto err;
+		}
+
+		++domain_start;
+		--domain_end;
+	} else {
+		port_start = strchr(proto_end, ':');
+		if (port_start && port_start < path_start)
+			domain_end = port_start;
+		else
+			domain_end = path_start;
+	}
+
+
+	if (port_start && port_start < path_start) {
 		if (port_start + 1 >= path_start) {
 			fprintf(stderr, "url_parse: Zero length port\n");
 			goto err;
@@ -132,18 +159,17 @@ int url_parse(char *str, url *url)
 			fprintf(stderr, "url_parse: Port out of range\n");
 			goto err;
 		}
-	} else {
-		port_start = path_start;
 	}
 
-	domain = strndup(proto_end, port_start - proto_end);
+	domain = strndup(domain_start, domain_end - domain_start);
 	if (-1 == sane_getaddrinfo(domain, (uint16_t) port, &url->server.addr))
 		goto err_free;
 
 	url->server.proto    = proto;
-	url->server.name     = domain;
+	url->server.name     = strndup(proto_end, path_start - proto_end);
 	url->server.insecure = 0;
 	url->path            = strdup(path_start);
+	free(domain);
 	return 0;
 err_free:
 	free(domain);
