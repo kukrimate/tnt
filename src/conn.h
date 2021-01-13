@@ -33,6 +33,16 @@ ssize_t conn_write(conn *conn, void *buf, size_t nbyte);
 ssize_t conn_read(conn *conn, void *buf, size_t nbyte);
 
 /*
+ * Read a single char from a connection
+ */
+int conn_getchar(conn *conn);
+
+/*
+ * Dispose of the next n bytes received
+ */
+int conn_dispose(conn *conn, size_t n);
+
+/*
  * Close a connection
  */
 void conn_close(conn *conn);

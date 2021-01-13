@@ -117,8 +117,35 @@ ssize_t conn_read(conn *conn, void *buf, size_t nbyte)
 {
 	if (conn->tls_client)
 		return tls_read(conn->tls_client, buf, nbyte);
-	else
+	else {
 		return read(conn->sockfd, buf, nbyte);
+	}
+}
+
+int conn_getchar(conn *conn)
+{
+	int err;
+	char ch;
+
+	err = conn_read(conn, &ch, 1);
+	if (err > 0)
+		return (int) ch;
+	else
+		return err;
+}
+
+int conn_dispose(conn *conn, size_t n)
+{
+	char buf[4096];
+
+	for (; n > sizeof buf; n -= sizeof buf)
+		if (conn_read(conn, buf, sizeof buf) < 0)
+			return -1;
+
+	if (n && conn_read(conn, buf, n) < 0)
+		return -1;
+
+	return 0;
 }
 
 void conn_close(conn *conn)

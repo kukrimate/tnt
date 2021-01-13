@@ -1,6 +1,9 @@
 #ifndef HTTP_H
 #define HTTP_H
 
+VEC_GEN(char *, str_)
+MAP_GEN(char *, char *, djb2_hash, !strcmp, header_)
+
 typedef struct {
 	/* HTTP version */
 	char *version;
@@ -10,17 +13,17 @@ typedef struct {
 	char *reason;
 
 	/* Hash table with the headers */
-	htab headers;
+	header_map headers;
 } http_response;
 
 /*
  * Recieve an HTTP response over a connection
  */
-int http_recieve(conn *conn, http_response *resp, size_t *consumed);
+int http_recieve(conn *conn, http_response *resp);
 
 /*
  * Send an HTTP request over a connection
  */
-int http_send(conn *conn, dynarr *req);
+int http_send(conn *conn, str_vec *req);
 
 #endif

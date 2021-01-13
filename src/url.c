@@ -11,24 +11,26 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
-#include "dynarr.h"
+#include <vec.h>
 #include "url.h"
+
+VEC_GEN(char, c)
 
 static char *hexdigits = "0123456789abcdef";
 
-static void addesc(dynarr *x, char c)
+static void addesc(cvec *x, char c)
 {
-	dynarr_addc(x, '%');
-	dynarr_addc(x, hexdigits[c >> 4 & 0xf]);
-	dynarr_addc(x, hexdigits[c & 0xf]);
+	cvec_add(x, '%');
+	cvec_add(x, hexdigits[c >> 4 & 0xf]);
+	cvec_add(x, hexdigits[c & 0xf]);
 }
 
 char *urlescape(char *s, size_t n)
 {
 	char *p;
-	dynarr tmp;
+	cvec tmp;
 
-	dynarr_new(&tmp, sizeof(char));
+	cvec_init(&tmp);
 	for (p = s; p < s + n; ++p) {
 		if (*p <= 0x20) /* control and space */
 			addesc(&tmp, *p);
@@ -50,12 +52,12 @@ char *urlescape(char *s, size_t n)
 				addesc(&tmp, *p);
 				break;
 			default:
-				dynarr_addc(&tmp, *p);
+				cvec_add(&tmp, *p);
 				break;
 			}
 	}
-	dynarr_addc(&tmp, 0);
-	return tmp.buffer;
+	cvec_add(&tmp, 0);
+	return tmp.arr;
 }
 
 static int isnum(char *str, size_t len)

@@ -2,14 +2,13 @@
 PREFIX  := /usr/local
 
 # Compiler flags
-CFLAGS  := -std=c99 -D_GNU_SOURCE -pthread -pedantic -Wall \
-	-Wdeclaration-after-statement -Wno-parentheses \
-	-I/opt/libressl/include
+CFLAGS  := -std=c99 -D_GNU_SOURCE -Wall -Wpedantic -pthread \
+	-Ilibkm -I/opt/libressl/include
 LDFLAGS := -pthread
 LIBS    := -L/opt/libressl/lib -l:libtls.a -l:libssl.a -l:libcrypto.a
 
 # Object files
-OBJ := dynarr.o htab.o url.o conn.o http.o tnt.o
+OBJ := src/url.o src/conn.o src/http.o src/tnt.o
 
 .PHONY: all
 all: tnt
@@ -26,5 +25,4 @@ install: tnt
 
 .PHONY: clean
 clean:
-	find -name '*.o' -delete
-	rm -f tnt
+	rm -f $(OBJ) tnt

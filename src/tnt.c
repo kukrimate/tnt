@@ -12,32 +12,34 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <pthread.h>
-#include "dynarr.h"
-#include "htab.h"
+#include <vec.h>
+#include <djb2.h>
+#include <map.h>
 #include "url.h"
 #include "conn.h"
 #include "http.h"
 
-static int runfuzz(url_server *server, dynarr *plist)
+VEC_GEN(char, c)
+
+static int runfuzz(url_server *server, str_vec *plist)
 {
-	dynarr req;
+	str_vec req;
 	http_response resp;
 
 	int reconnect;
 	conn conn;
-	char **cur, *end, *tmp;
-	size_t consumed;
+	char **cur, **end, *tmp;
+	size_t content_length;
 
-	dynarr_new(&req, sizeof(char *));
-
+	str_vec_init(&req);
 	reconnect = 0;
 	if (-1 == conn_open(server, &conn))
 		goto err;
 
-	cur = dynarr_ptr(plist, 0);
-	end = (char *) plist->buffer + plist->elem_size * plist->elem_count;
+	cur = plist->arr;
+	end = plist->arr + plist->n;
 
-	while ((char *) cur < end) {
+	while (cur < end) {
 		if (reconnect) {
 			conn_close(&conn);
 			if (-1 == conn_open(server, &conn))
@@ -45,43 +47,48 @@ static int runfuzz(url_server *server, dynarr *plist)
 			reconnect = 0;
 		}
 
-		dynarr_addp(&req, "GET");
-		dynarr_addp(&req, *cur);
-		dynarr_addp(&req, "HTTP/1.1");
-		dynarr_addp(&req, "Host");
-		dynarr_addp(&req, server->name);
-		dynarr_addp(&req, "Connection");
-		dynarr_addp(&req, "keep-alive");
+		str_vec_add(&req, "GET");
+		str_vec_add(&req, *cur);
+		str_vec_add(&req, "HTTP/1.1");
+		str_vec_add(&req, "Host");
+		str_vec_add(&req, server->name);
+		str_vec_add(&req, "Connection");
+		str_vec_add(&req, "keep-alive");
 
-		if (-1 == http_send(&conn, &req) ||
-				-1 == http_recieve(&conn, &resp, &consumed)) {
+		if (http_send(&conn, &req) < 0 ||
+				http_recieve(&conn, &resp) < 0) {
 			conn_close(&conn);
 			goto err;
 		}
 		printf("Path: %s Status: %s\n", *cur++, resp.status);
 
-		tmp = htab_get(&resp.headers, "Connection");
-		if (tmp && !strcmp(tmp, "close"))
+		if (header_map_get(&resp.headers, "Connection", &tmp)
+				&& !strcmp(tmp, "close"))
 			reconnect = 1;
-		tmp = htab_get(&resp.headers, "Content-Length");
-		if (tmp && consumed < strtol(tmp, NULL, 10))
-			reconnect = 1;
+		if (header_map_get(&resp.headers, "Content-Length", &tmp)
+				&& (content_length = strtol(tmp, NULL, 10)) > 0) {
+			/* Try to dispose of content if it exists */
+			if (conn_dispose(&conn, content_length) < 0) {
+				conn_close(&conn);
+				goto err;
+			}
+		}
 
 		/* Discard request */
-		req.elem_count = 0;
+		req.n = 0;
 
 		/* Discard response */
 		free(resp.version);
 		free(resp.status);
 		free(resp.reason);
-		htab_del(&resp.headers, 1);
+		header_map_free(&resp.headers);
 	}
 
 	conn_close(&conn);
-	dynarr_del(&req);
+	str_vec_free(&req);
 	return 0;
 err:
-	dynarr_del(&req);
+	str_vec_free(&req);
 	return -1;
 }
 
@@ -91,7 +98,7 @@ typedef struct {
 	/* Target server */
 	url_server *server;
 	/* List of paths */
-	dynarr plist;
+	str_vec plist;
 } fuzzthread;
 
 static void *fuzzthread_start(fuzzthread *args)
@@ -101,7 +108,7 @@ static void *fuzzthread_start(fuzzthread *args)
 	return args;
 }
 
-static int spawn_threads(int tcount, url_server *server, dynarr *plist)
+static int spawn_threads(int tcount, url_server *server, str_vec *plist)
 {
 	int status;
 	fuzzthread *tptr;
@@ -112,17 +119,16 @@ static int spawn_threads(int tcount, url_server *server, dynarr *plist)
 	tptr = malloc(tcount * sizeof(fuzzthread));
 	if (!tptr)
 		abort();
-	pleft = plist->elem_count;
+	pleft = plist->n;
 
 	for (cnt = tcount; cnt--; ++tptr) {
 		tptr->server = server;
-		dynarr_new(&tptr->plist, sizeof(char *));
+		str_vec_init(&tptr->plist);
 		if (cnt) {
-			pleft -= plist->elem_count / tcount;
-			dynarr_add(&tptr->plist, plist->elem_count / tcount,
-				dynarr_ptr(plist, pleft));
+			pleft -= plist->n / tcount;
+			str_vec_addall(&tptr->plist, plist->arr + pleft, plist->n / tcount);
 		} else {
-			dynarr_add(&tptr->plist, pleft,	plist->buffer);
+			str_vec_addall(&tptr->plist, plist->arr, pleft);
 		}
 
 		pthread_create(&tptr->tid, NULL,
@@ -133,7 +139,7 @@ static int spawn_threads(int tcount, url_server *server, dynarr *plist)
 		pthread_join((--tptr)->tid, &retval);
 		if (!retval)
 			status = -1;
-		dynarr_del(&tptr->plist);
+		str_vec_free(&tptr->plist);
 	}
 
 	free(tptr);
@@ -143,30 +149,30 @@ static int spawn_threads(int tcount, url_server *server, dynarr *plist)
 static char *template_gen(char *template, char *old, char *new)
 {
 	char *begin, *end;
-	dynarr res;
+	cvec res;
 
 	begin = strstr(template, old);
 	if (!begin)
 		return NULL;
 	end = begin + strlen(old);
 
-	dynarr_new(&res, sizeof(char));
-	dynarr_add(&res, begin - template, template);
-	dynarr_add(&res, strlen(new), new);
-	dynarr_add(&res, strlen(template) - (end - template), end);
+	cvec_init(&res);
+	cvec_addall(&res, template, begin - template);
+	cvec_addall(&res, new, strlen(new));
+	cvec_addall(&res, end, strlen(template) - (end - template));
 
-	begin = urlescape(res.buffer, res.elem_count);
-	dynarr_del(&res);
+	begin = urlescape(res.arr, res.n);
+	cvec_free(&res);
 	return begin;
 }
 
-static int genlist(char *file, char *template, dynarr *list)
+static int genlist(char *file, char *template, str_vec *list)
 {
 	int fd;
 	char buf[4096], *bptr, *t;
 	ssize_t len;
 	size_t i;
-	dynarr tmp;
+	cvec tmp;
 
 	fd = open(file, O_RDONLY);
 	if (-1 == fd) {
@@ -174,24 +180,24 @@ static int genlist(char *file, char *template, dynarr *list)
 		return -1;
 	}
 
-	dynarr_new(&tmp, sizeof(char));
+	cvec_init(&tmp);
 
 	while (0 < (len = read(fd, buf, sizeof(buf))))
 		for (bptr = buf; bptr < buf + len; ++bptr) {
-			dynarr_addc(&tmp, *bptr);
+			cvec_add(&tmp, *bptr);
 			if (*bptr == '\n') {
-				if (tmp.elem_count > 1) {
-					t = strndup(tmp.buffer, tmp.elem_count - 1);
-					dynarr_addp(list, template_gen(template, "FUZZ", t));
+				if (tmp.n > 1) {
+					t = strndup(tmp.arr, tmp.n - 1);
+					str_vec_add(list, template_gen(template, "FUZZ", t));
 					free(t);
 				}
-				tmp.elem_count = 0;
+				tmp.n = 0;
 			}
 		}
 	/* add last, (unterminated) line if it's not empty */
-	if (tmp.elem_count > 1) {
-		t = strndup(tmp.buffer, tmp.elem_count - 1);
-		dynarr_addp(list, template_gen(template, "FUZZ", t));
+	if (tmp.n > 1) {
+		t = strndup(tmp.arr, tmp.n - 1);
+		str_vec_add(list, template_gen(template, "FUZZ", t));
 		free(t);
 	}
 
@@ -200,14 +206,14 @@ static int genlist(char *file, char *template, dynarr *list)
 		goto err;
 	}
 
-	dynarr_del(&tmp);
+	cvec_free(&tmp);
 	close(fd);
 	return 0;
 
 err:
-	for (i = 0; i < list->elem_count; ++i)
-		free(dynarr_getp(list, i));
-	dynarr_del(&tmp);
+	for (i = 0; i < list->n; ++i)
+		free(list->arr[i]);
+	cvec_free(&tmp);
 	close(fd);
 	return -1;
 }
@@ -220,7 +226,7 @@ static int prog(int opt_threads, int opt_insecure,
 	char *opt_wordlist, char *opt_url)
 {
 	url url;
-	dynarr wlist;
+	str_vec wlist;
 
 	if (-1 == url_parse(opt_url, &url))
 		return 1;
@@ -231,21 +237,21 @@ static int prog(int opt_threads, int opt_insecure,
 		goto err_url;
 	}
 
-	dynarr_new(&wlist, sizeof(char *));
+	str_vec_init(&wlist);
 	if (-1 == genlist(opt_wordlist, url.path, &wlist)) {
-		dynarr_del(&wlist);
+		str_vec_free(&wlist);
 		goto err_url;
 	}
 
 	if (-1 == spawn_threads(opt_threads, &url.server, &wlist))
-		goto err_wlist;
+	 	goto err_wlist;
 
-	dynarr_delall(&wlist);
+	str_vec_free(&wlist);
 	url_free(&url);
 	return 0;
 
 err_wlist:
-	dynarr_delall(&wlist);
+	str_vec_free(&wlist);
 err_url:
 	url_free(&url);
 	return 1;
