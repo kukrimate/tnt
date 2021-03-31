@@ -3,7 +3,7 @@ PREFIX  := /usr/local
 
 # Compiler flags
 CFLAGS  := -std=c99 -D_GNU_SOURCE -Wall -Wpedantic -pthread \
-	-Ilibkm -I/opt/libressl/include
+	-Icdat/src -I/opt/libressl/include -g
 LDFLAGS := -pthread
 LIBS    := -L/opt/libressl/lib -l:libtls.a -l:libssl.a -l:libcrypto.a
 

@@ -10,14 +10,14 @@
 #include <ctype.h>
 #include <unistd.h>
 #include <arpa/inet.h>
-#include <vec.h>
-#include <djb2.h>
+#include <dat.h>
 #include <map.h>
+#include <vec.h>
 #include "url.h"
 #include "conn.h"
 #include "http.h"
 
-VEC_GEN(char, c)
+VEC_GEN(char, char)
 
 /*
  * Create a "stripped" duplicate of a string
@@ -49,19 +49,19 @@ int http_recieve(conn *conn, http_response *resp)
 	int lchr, curchr;
 	char *hdr_nam; /* Current header name */
 
-	cvec tmp;
+	Vec_char tmp;
 	http_resp_state state;
 
 	bzero(resp, sizeof(http_response));
-	header_map_init(&resp->headers);
+	map_header_init(&resp->headers);
 	hdr_nam = NULL;
 
-	cvec_init(&tmp);
+	vec_char_init(&tmp);
 	state = VERSION;
 
 	lchr = 0;
 	for (; (curchr = conn_getchar(conn)) > 0; lchr = curchr) {
-		cvec_add(&tmp, curchr);
+		vec_char_add(&tmp, curchr);
 
 		switch (curchr) {
 		case ' ':
@@ -105,7 +105,7 @@ int http_recieve(conn *conn, http_response *resp)
 				state = HDR_NAM;
 				break;
 			case HDR_VAL:
-				header_map_put(&resp->headers, hdr_nam, strstrip(tmp.arr, tmp.n - 2));
+				*map_header_put(&resp->headers, hdr_nam) = strstrip(tmp.arr, tmp.n - 2);
 				hdr_nam = NULL;
 				tmp.n = 0;
 				state = HDR_NAM;
@@ -140,16 +140,16 @@ fail:
 		free(resp->status);
 	if (resp->reason)
 		free(resp->reason);
-	header_map_free(&resp->headers);
-	cvec_free(&tmp);
+	map_header_free(&resp->headers);
+	vec_char_free(&tmp);
 	return -1;
 
 success:
-	cvec_free(&tmp);
+	vec_char_free(&tmp);
 	return 0;
 }
 
-int http_send(conn *conn, str_vec *req)
+int http_send(conn *conn, Vec_str *req)
 {
 	size_t i, l;
 	char arr[4096];

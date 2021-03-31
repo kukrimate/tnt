@@ -14,23 +14,23 @@
 #include <vec.h>
 #include "url.h"
 
-VEC_GEN(char, c)
+VEC_GEN(char, char)
 
 static char *hexdigits = "0123456789abcdef";
 
-static void addesc(cvec *x, char c)
+static void addesc(Vec_char *x, char c)
 {
-	cvec_add(x, '%');
-	cvec_add(x, hexdigits[c >> 4 & 0xf]);
-	cvec_add(x, hexdigits[c & 0xf]);
+	vec_char_add(x, '%');
+	vec_char_add(x, hexdigits[c >> 4 & 0xf]);
+	vec_char_add(x, hexdigits[c & 0xf]);
 }
 
 char *urlescape(char *s, size_t n)
 {
 	char *p;
-	cvec tmp;
+	Vec_char tmp;
 
-	cvec_init(&tmp);
+	vec_char_init(&tmp);
 	for (p = s; p < s + n; ++p) {
 		if (*p <= 0x20) /* control and space */
 			addesc(&tmp, *p);
@@ -52,11 +52,11 @@ char *urlescape(char *s, size_t n)
 				addesc(&tmp, *p);
 				break;
 			default:
-				cvec_add(&tmp, *p);
+				vec_char_add(&tmp, *p);
 				break;
 			}
 	}
-	cvec_add(&tmp, 0);
+	vec_char_add(&tmp, 0);
 	return tmp.arr;
 }
 

@@ -12,26 +12,26 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <dat.h>
 #include <vec.h>
-#include <djb2.h>
 #include <map.h>
 #include "url.h"
 #include "conn.h"
 #include "http.h"
 
-VEC_GEN(char, c)
+VEC_GEN(char, char)
 
-static int runfuzz(url_server *server, str_vec *plist)
+static int runfuzz(url_server *server, Vec_str *plist)
 {
-	str_vec req;
+	Vec_str req;
 	http_response resp;
 
 	int reconnect;
 	conn conn;
-	char **cur, **end, *tmp;
+	char **cur, **end;
 	size_t content_length;
 
-	str_vec_init(&req);
+	vec_str_init(&req);
 	reconnect = 0;
 	if (-1 == conn_open(server, &conn))
 		goto err;
@@ -47,13 +47,13 @@ static int runfuzz(url_server *server, str_vec *plist)
 			reconnect = 0;
 		}
 
-		str_vec_add(&req, "GET");
-		str_vec_add(&req, *cur);
-		str_vec_add(&req, "HTTP/1.1");
-		str_vec_add(&req, "Host");
-		str_vec_add(&req, server->name);
-		str_vec_add(&req, "Connection");
-		str_vec_add(&req, "keep-alive");
+		vec_str_add(&req, "GET");
+		vec_str_add(&req, *cur);
+		vec_str_add(&req, "HTTP/1.1");
+		vec_str_add(&req, "Host");
+		vec_str_add(&req, server->name);
+		vec_str_add(&req, "Connection");
+		vec_str_add(&req, "keep-alive");
 
 		if (http_send(&conn, &req) < 0 ||
 				http_recieve(&conn, &resp) < 0) {
@@ -62,11 +62,16 @@ static int runfuzz(url_server *server, str_vec *plist)
 		}
 		printf("Path: %s Status: %s\n", *cur++, resp.status);
 
-		if (header_map_get(&resp.headers, "Connection", &tmp)
-				&& !strcmp(tmp, "close"))
-			reconnect = 1;
-		if (header_map_get(&resp.headers, "Content-Length", &tmp)
-				&& (content_length = strtol(tmp, NULL, 10)) > 0) {
+		// char **valptr = map_header_get(&resp.headers, "Connection");
+		// if (valptr && !strcmp(*valptr, "close"))
+		reconnect = 1;
+
+		content_length = 0;
+		char **valptr = map_header_get(&resp.headers, "Content-Length");
+		if (valptr) {
+			content_length = strtol(*valptr, NULL, 10);
+		}
+		if (content_length > 0) {
 			/* Try to dispose of content if it exists */
 			if (conn_dispose(&conn, content_length) < 0) {
 				conn_close(&conn);
@@ -81,14 +86,14 @@ static int runfuzz(url_server *server, str_vec *plist)
 		free(resp.version);
 		free(resp.status);
 		free(resp.reason);
-		header_map_free(&resp.headers);
+		map_header_free(&resp.headers);
 	}
 
 	conn_close(&conn);
-	str_vec_free(&req);
+	vec_str_free(&req);
 	return 0;
 err:
-	str_vec_free(&req);
+	vec_str_free(&req);
 	return -1;
 }
 
@@ -98,7 +103,7 @@ typedef struct {
 	/* Target server */
 	url_server *server;
 	/* List of paths */
-	str_vec plist;
+	Vec_str plist;
 } fuzzthread;
 
 static void *fuzzthread_start(fuzzthread *args)
@@ -108,7 +113,7 @@ static void *fuzzthread_start(fuzzthread *args)
 	return args;
 }
 
-static int spawn_threads(int tcount, url_server *server, str_vec *plist)
+static int spawn_threads(int tcount, url_server *server, Vec_str *plist)
 {
 	int status;
 	fuzzthread *tptr;
@@ -123,12 +128,12 @@ static int spawn_threads(int tcount, url_server *server, str_vec *plist)
 
 	for (cnt = tcount; cnt--; ++tptr) {
 		tptr->server = server;
-		str_vec_init(&tptr->plist);
+		vec_str_init(&tptr->plist);
 		if (cnt) {
 			pleft -= plist->n / tcount;
-			str_vec_addall(&tptr->plist, plist->arr + pleft, plist->n / tcount);
+			vec_str_addall(&tptr->plist, plist->arr + pleft, plist->n / tcount);
 		} else {
-			str_vec_addall(&tptr->plist, plist->arr, pleft);
+			vec_str_addall(&tptr->plist, plist->arr, pleft);
 		}
 
 		pthread_create(&tptr->tid, NULL,
@@ -139,7 +144,7 @@ static int spawn_threads(int tcount, url_server *server, str_vec *plist)
 		pthread_join((--tptr)->tid, &retval);
 		if (!retval)
 			status = -1;
-		str_vec_free(&tptr->plist);
+		vec_str_free(&tptr->plist);
 	}
 
 	free(tptr);
@@ -149,30 +154,30 @@ static int spawn_threads(int tcount, url_server *server, str_vec *plist)
 static char *template_gen(char *template, char *old, char *new)
 {
 	char *begin, *end;
-	cvec res;
+	Vec_char res;
 
 	begin = strstr(template, old);
 	if (!begin)
 		return NULL;
 	end = begin + strlen(old);
 
-	cvec_init(&res);
-	cvec_addall(&res, template, begin - template);
-	cvec_addall(&res, new, strlen(new));
-	cvec_addall(&res, end, strlen(template) - (end - template));
+	vec_char_init(&res);
+	vec_char_addall(&res, template, begin - template);
+	vec_char_addall(&res, new, strlen(new));
+	vec_char_addall(&res, end, strlen(template) - (end - template));
 
 	begin = urlescape(res.arr, res.n);
-	cvec_free(&res);
+	vec_char_free(&res);
 	return begin;
 }
 
-static int genlist(char *file, char *template, str_vec *list)
+static int genlist(char *file, char *template, Vec_str *list)
 {
 	int fd;
 	char buf[4096], *bptr, *t;
 	ssize_t len;
 	size_t i;
-	cvec tmp;
+	Vec_char tmp;
 
 	fd = open(file, O_RDONLY);
 	if (-1 == fd) {
@@ -180,15 +185,15 @@ static int genlist(char *file, char *template, str_vec *list)
 		return -1;
 	}
 
-	cvec_init(&tmp);
+	vec_char_init(&tmp);
 
 	while (0 < (len = read(fd, buf, sizeof(buf))))
 		for (bptr = buf; bptr < buf + len; ++bptr) {
-			cvec_add(&tmp, *bptr);
+			vec_char_add(&tmp, *bptr);
 			if (*bptr == '\n') {
 				if (tmp.n > 1) {
 					t = strndup(tmp.arr, tmp.n - 1);
-					str_vec_add(list, template_gen(template, "FUZZ", t));
+					vec_str_add(list, template_gen(template, "FUZZ", t));
 					free(t);
 				}
 				tmp.n = 0;
@@ -197,7 +202,7 @@ static int genlist(char *file, char *template, str_vec *list)
 	/* add last, (unterminated) line if it's not empty */
 	if (tmp.n > 1) {
 		t = strndup(tmp.arr, tmp.n - 1);
-		str_vec_add(list, template_gen(template, "FUZZ", t));
+		vec_str_add(list, template_gen(template, "FUZZ", t));
 		free(t);
 	}
 
@@ -206,14 +211,14 @@ static int genlist(char *file, char *template, str_vec *list)
 		goto err;
 	}
 
-	cvec_free(&tmp);
+	vec_char_free(&tmp);
 	close(fd);
 	return 0;
 
 err:
 	for (i = 0; i < list->n; ++i)
 		free(list->arr[i]);
-	cvec_free(&tmp);
+	vec_char_free(&tmp);
 	close(fd);
 	return -1;
 }
@@ -226,7 +231,7 @@ static int prog(int opt_threads, int opt_insecure,
 	char *opt_wordlist, char *opt_url)
 {
 	url url;
-	str_vec wlist;
+	Vec_str wlist;
 
 	if (-1 == url_parse(opt_url, &url))
 		return 1;
@@ -237,21 +242,21 @@ static int prog(int opt_threads, int opt_insecure,
 		goto err_url;
 	}
 
-	str_vec_init(&wlist);
+	vec_str_init(&wlist);
 	if (-1 == genlist(opt_wordlist, url.path, &wlist)) {
-		str_vec_free(&wlist);
+		vec_str_free(&wlist);
 		goto err_url;
 	}
 
 	if (-1 == spawn_threads(opt_threads, &url.server, &wlist))
 	 	goto err_wlist;
 
-	str_vec_free(&wlist);
+	vec_str_free(&wlist);
 	url_free(&url);
 	return 0;
 
 err_wlist:
-	str_vec_free(&wlist);
+	vec_str_free(&wlist);
 err_url:
 	url_free(&url);
 	return 1;
